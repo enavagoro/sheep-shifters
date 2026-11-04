@@ -43,6 +43,7 @@ export class GameScene extends Phaser.Scene {
     this.wolfTimer = TUNING.wolfFirstDelay;
     this.sheepWolfTimer = TUNING.sheepWolfFirstDelay;
     this.herdTimer = TUNING.herdFirstDelay;
+    this.lastHerdZone = -1;
     this.dogController = new DogController(this.dogs);
     this.state = new GameState();
     this.lastLevel = 1;
@@ -140,6 +141,14 @@ export class GameScene extends Phaser.Scene {
       }
       this.updatePowers(realDt);
       this.updateActiveEffect(realDt);
+      const corralMove = this.corral.update(realDt);
+      this.refreshColliders();
+      if (corralMove.dy) {
+        for (const animal of this.sheep) {
+          if (animal.removed || animal.lost) continue;
+          if (animal.secured || animal.collected) animal.y += corralMove.dy;
+        }
+      }
       for (const wolf of this.wolves) {
         if (wolf.active) wolf.speed = pace.wolfSpeed;
       }
@@ -427,7 +436,7 @@ export class GameScene extends Phaser.Scene {
     this.sfx.play('expand');
     this.vfx.flashColor(POWER_INFO.wide.color, 90);
     this.corral.pulseEntrance();
-    this.animateGateWiden(TUNING.powerWideExtra, 380, true);
+    this.animateGateWiden(this.corral.maxGateWiden(), 420, true);
   }
 
   animateGateWiden(target, duration, opening) {
@@ -592,7 +601,13 @@ export class GameScene extends Phaser.Scene {
   spawnHerd(dt, pace) {
     if (this.herdTimer > pace.herdInterval) this.herdTimer = pace.herdInterval;
     const alive = this.sheep.filter((animal) => !animal.removed && !animal.lost && !animal.secured).length;
-    
+    const sheepWolfLive = this.sheepWolves.some((lure) => lure.active);
+
+    if (sheepWolfLive) {
+      this.herdTimer = Math.min(this.herdTimer, pace.herdInterval);
+      return;
+    }
+
     if (alive === 0 && this.herdTimer > 1) this.herdTimer = 1;
     this.herdTimer -= dt;
     if (this.herdTimer > 0 || alive >= TUNING.herdCap) return;
@@ -608,13 +623,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   pickHerdOrigin() {
-    for (let attempt = 0; attempt < 36; attempt += 1) {
-      const x = BOUNDS.left + 90 + Math.random() * (BOUNDS.right - BOUNDS.left - 360);
-      const y = BOUNDS.top + 90 + Math.random() * (BOUNDS.bottom - BOUNDS.top - 180);
-      if (this.corral.covers(x, y)) continue;
-      if (nearObstacle(x, y, this.fieldObstacles, 70)) continue;
-      if (nearAny(x, y, this.wolves, (wolf) => wolf.active, TUNING.spawnClearance)) continue;
-      return { x, y };
+    const zones = herdSpawnZones();
+    const order = zones.map((_, i) => i).sort((a, b) => {
+      const preferA = a === this.lastHerdZone ? 1 : 0;
+      const preferB = b === this.lastHerdZone ? 1 : 0;
+      return preferA - preferB || Math.random() - 0.5;
+    });
+
+    for (const zoneIndex of order) {
+      const zone = zones[zoneIndex];
+      for (let attempt = 0; attempt < 14; attempt += 1) {
+        const x = zone.left + Math.random() * (zone.right - zone.left);
+        const y = zone.top + Math.random() * (zone.bottom - zone.top);
+        if (this.corral.covers(x, y)) continue;
+        if (nearObstacle(x, y, this.fieldObstacles, 70)) continue;
+        if (nearAny(x, y, this.wolves, (wolf) => wolf.active, TUNING.spawnClearance * 0.7)) continue;
+        if (nearAny(x, y, this.sheep, (animal) => !animal.removed && !animal.lost && !animal.secured, 160)) {
+          continue;
+        }
+        this.lastHerdZone = zoneIndex;
+        return { x, y };
+      }
     }
     return null;
   }
@@ -737,7 +766,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   readRestart() {
-    const restartDown = this.keys.R.isDown;
+    const restartDown = this.keys.R.isDown
+      || (this.state.over && this.keys.ENTER.isDown);
     if (restartDown && !this.restartHeld) {
       this.scene.restart();
       return true;
@@ -752,6 +782,44 @@ function crossedRaidLevel(fromLevel, toLevel, every) {
     if (level > 0 && level % every === 0) return true;
   }
   return false;
+}
+
+function herdSpawnZones() {
+  const midX = (BOUNDS.left + BOUNDS.right) * 0.5;
+  const midY = (BOUNDS.top + BOUNDS.bottom) * 0.5;
+  const playRight = Math.min(BOUNDS.right - 120, 980);
+  return [
+    {
+      left: BOUNDS.left + 70,
+      right: midX - 40,
+      top: BOUNDS.top + 70,
+      bottom: midY - 30,
+    },
+    {
+      left: BOUNDS.left + 70,
+      right: midX - 40,
+      top: midY + 30,
+      bottom: BOUNDS.bottom - 70,
+    },
+    {
+      left: midX + 20,
+      right: playRight,
+      top: BOUNDS.top + 70,
+      bottom: midY - 40,
+    },
+    {
+      left: midX + 20,
+      right: playRight,
+      top: midY + 40,
+      bottom: BOUNDS.bottom - 70,
+    },
+    {
+      left: BOUNDS.left + 80,
+      right: midX - 80,
+      top: midY - 90,
+      bottom: midY + 90,
+    },
+  ];
 }
 
 function nearObstacle(x, y, obstacles, margin) {

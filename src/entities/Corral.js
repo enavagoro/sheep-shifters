@@ -1,4 +1,4 @@
-import { COLORS, CORRAL } from '../config.js';
+import { BOUNDS, COLORS, CORRAL, TUNING } from '../config.js';
 
 export function createCorralGeometry(spec = CORRAL) {
   const right = spec.x + spec.w;
@@ -47,8 +47,36 @@ export class Corral {
     this.gateWiden = 0;
     this.fences = [];
     this.gatePulse = 0;
+    this.moveT = Math.random() * Math.PI * 2;
     this.rebuildGeometry();
     this.draw(scene);
+  }
+
+  update(dt) {
+    this.moveT += dt * TUNING.corralMoveSpeed;
+    const prevY = this.y;
+    const minY = BOUNDS.top + 18;
+    const maxY = BOUNDS.bottom - this.h - 18;
+    const mid = (minY + maxY) / 2;
+    const amp = Math.min(TUNING.corralMoveAmp, (maxY - minY) * 0.5);
+    this.y = mid + Math.sin(this.moveT) * amp;
+    const dy = this.y - prevY;
+    this.rebuildGeometry();
+    this.syncVisuals();
+    return { dy, fences: this.fences };
+  }
+
+  syncVisuals() {
+    this.floor.setPosition(
+      (this.outer.left + this.outer.right) / 2,
+      (this.outer.top + this.outer.bottom) / 2,
+    );
+    this.label.setPosition(
+      (this.inner.left + this.inner.right) / 2,
+      this.inner.top + 14,
+    );
+    const pulse = this.gatePulse || (this.gateWiden > 0 ? 0.45 : 0);
+    this.redraw(pulse);
   }
 
   rebuildGeometry() {
@@ -63,15 +91,19 @@ export class Corral {
     }));
   }
 
-  
+  maxGateWiden() {
+    return Math.max(this.baseGateStartRel, this.h - this.baseGateEndRel);
+  }
+
+  isLeftOpen() {
+    return this.gateStartRel <= 0.5 && this.gateEndRel >= this.h - 0.5;
+  }
+
   setGateWiden(extra) {
-    const maxExtra = Math.max(0, Math.min(
-      this.baseGateStartRel - this.thickness - 8,
-      this.h - this.thickness - 8 - this.baseGateEndRel,
-    ));
+    const maxExtra = this.maxGateWiden();
     this.gateWiden = Math.max(0, Math.min(extra, maxExtra));
-    this.gateStartRel = this.baseGateStartRel - this.gateWiden;
-    this.gateEndRel = this.baseGateEndRel + this.gateWiden;
+    this.gateStartRel = Math.max(0, this.baseGateStartRel - this.gateWiden);
+    this.gateEndRel = Math.min(this.h, this.baseGateEndRel + this.gateWiden);
     this.rebuildGeometry();
     this.redraw(this.gatePulse || (this.gateWiden > 0 ? 0.45 : 0));
     return this.fences;
@@ -122,12 +154,13 @@ export class Corral {
     this.neon.lineStyle(2, COLORS.corralNeon, lineA);
     this.strokeCorral(this.neon, 0);
 
-    
-    const gateTop = this.y + this.gateStartRel;
-    const gateBot = this.y + this.gateEndRel;
-    this.neon.lineStyle(2, COLORS.corralNeon, 0.35 + pulse * 0.5);
-    this.neon.lineBetween(this.x + 4, gateTop, this.x + 4, gateBot);
-    this.neon.lineBetween(this.x + 10, gateTop, this.x + 10, gateBot);
+    if (!this.isLeftOpen()) {
+      const gateTop = this.y + this.gateStartRel;
+      const gateBot = this.y + this.gateEndRel;
+      this.neon.lineStyle(2, COLORS.corralNeon, 0.35 + pulse * 0.5);
+      this.neon.lineBetween(this.x + 4, gateTop, this.x + 4, gateBot);
+      this.neon.lineBetween(this.x + 10, gateTop, this.x + 10, gateBot);
+    }
   }
 
   strokeCorral(g, pad) {
@@ -139,12 +172,19 @@ export class Corral {
     const gateBot = this.y + this.gateEndRel;
 
     g.beginPath();
-    g.moveTo(L, gateTop);
-    g.lineTo(L, T);
-    g.lineTo(R, T);
-    g.lineTo(R, B);
-    g.lineTo(L, B);
-    g.lineTo(L, gateBot);
+    if (this.isLeftOpen()) {
+      g.moveTo(L, T);
+      g.lineTo(R, T);
+      g.lineTo(R, B);
+      g.lineTo(L, B);
+    } else {
+      g.moveTo(L, gateTop);
+      g.lineTo(L, T);
+      g.lineTo(R, T);
+      g.lineTo(R, B);
+      g.lineTo(L, B);
+      g.lineTo(L, gateBot);
+    }
     g.strokePath();
   }
 
@@ -165,13 +205,16 @@ function fenceRects(spec) {
   const right = spec.x + spec.w;
   const bottom = spec.y + spec.h;
   const thickness = spec.thickness;
-  return [
+  const leftTopH = spec.gateStart - spec.y;
+  const leftBotH = bottom - spec.gateEnd;
+  const fences = [
     rect(spec.x, spec.y, spec.w, thickness),
     rect(spec.x, bottom - thickness, spec.w, thickness),
     rect(right - thickness, spec.y, thickness, spec.h),
-    rect(spec.x, spec.y, thickness, spec.gateStart - spec.y),
-    rect(spec.x, spec.gateEnd, thickness, bottom - spec.gateEnd),
   ];
+  if (leftTopH > 1) fences.push(rect(spec.x, spec.y, thickness, leftTopH));
+  if (leftBotH > 1) fences.push(rect(spec.x, spec.gateEnd, thickness, leftBotH));
+  return fences;
 }
 
 function rect(x, y, w, h) {
