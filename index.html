@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sheep Shifters</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #050706;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #game {
+        width: 100vw;
+        height: 100vh;
+      }
+
+      #game canvas {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        background: #050706;
+        color: #39ff6a;
+        font-family: "Press Start 2P", "Courier New", monospace;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+      }
+
+      #boot.hide {
+        opacity: 0;
+      }
+
+      #boot .title {
+        color: #ffe14a;
+        font-size: clamp(14px, 2.8vw, 26px);
+        text-align: center;
+        line-height: 1.35;
+        white-space: pre-line;
+      }
+
+      #boot .label {
+        font-size: clamp(12px, 2vw, 16px);
+        letter-spacing: 0.08em;
+      }
+
+      #boot .label::after {
+        content: "";
+        animation: dots 1s steps(3, end) infinite;
+      }
+
+      @keyframes dots {
+        0% { content: ""; }
+        33% { content: "."; }
+        66% { content: ".."; }
+        100% { content: "..."; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot">
+      <div class="title">SHEEP<br />SHIFTERS</div>
+      <div class="label">CARGANDO</div>
+    </div>
+    <div id="game"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
