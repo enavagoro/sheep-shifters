@@ -47,36 +47,64 @@ export class Corral {
     this.gateWiden = 0;
     this.fences = [];
     this.gatePulse = 0;
-    this.moveT = Math.random() * Math.PI * 2;
+    this.moveT = 0;
+    this.homeX = spec.x;
+    this.homeY = spec.y;
     this.rebuildGeometry();
     this.draw(scene);
   }
 
-  update(dt) {
-    this.moveT += dt * TUNING.corralMoveSpeed;
+  update(dt, level = 1) {
+    const prevX = this.x;
     const prevY = this.y;
-    const minY = BOUNDS.top + 18;
-    const maxY = BOUNDS.bottom - this.h - 18;
-    const mid = (minY + maxY) / 2;
-    const amp = Math.min(TUNING.corralMoveAmp, (maxY - minY) * 0.5);
-    this.y = mid + Math.sin(this.moveT) * amp;
+    const motion = corralMotionForLevel(level);
+
+    if (motion.mode === 'still') {
+      this.x = this.homeX;
+      this.y = this.homeY;
+    } else if (motion.mode === 'bob') {
+      this.moveT += dt * motion.speed;
+      const minY = BOUNDS.top + 18;
+      const maxY = BOUNDS.bottom - this.h - 18;
+      const mid = Math.max(minY, Math.min(maxY, this.homeY));
+      const amp = Math.min(motion.amp, Math.min(mid - minY, maxY - mid));
+      this.x = this.homeX;
+      this.y = mid + Math.sin(this.moveT) * amp;
+    } else {
+      this.moveT += dt * motion.speed;
+      const cx = (BOUNDS.left + BOUNDS.right) / 2;
+      const cy = (BOUNDS.top + BOUNDS.bottom) / 2;
+      const pad = 18;
+      const maxRx = Math.max(40, Math.min(
+        cx - (BOUNDS.left + pad + this.w / 2),
+        (BOUNDS.right - pad - this.w / 2) - cx,
+      ));
+      const maxRy = Math.max(40, Math.min(
+        cy - (BOUNDS.top + pad + this.h / 2),
+        (BOUNDS.bottom - pad - this.h / 2) - cy,
+      ));
+      const rx = Math.min(motion.rx, maxRx);
+      const ry = Math.min(motion.ry, maxRy);
+      this.x = cx + Math.cos(this.moveT) * rx - this.w / 2;
+      this.y = cy + Math.sin(this.moveT) * ry - this.h / 2;
+    }
+
+    const dx = this.x - prevX;
     const dy = this.y - prevY;
     this.rebuildGeometry();
     this.syncVisuals();
-    return { dy, fences: this.fences };
+    return { dx, dy, fences: this.fences };
   }
 
-  syncVisuals() {
-    this.floor.setPosition(
-      (this.outer.left + this.outer.right) / 2,
-      (this.outer.top + this.outer.bottom) / 2,
-    );
-    this.label.setPosition(
-      (this.inner.left + this.inner.right) / 2,
-      this.inner.top + 14,
-    );
+  syncVisuals(forceRedraw = false) {
+    this.floor.setPosition(this.x + this.w / 2, this.y + this.h / 2);
+    this.label.setPosition(this.x + this.w / 2, this.y + this.thickness + 14);
+    this.glow.setPosition(this.x, this.y);
+    this.neon.setPosition(this.x, this.y);
     const pulse = this.gatePulse || (this.gateWiden > 0 ? 0.45 : 0);
-    this.redraw(pulse);
+    if (forceRedraw || pulse !== this.drawnPulse || this.gateWiden !== this.drawnWiden) {
+      this.redraw(pulse);
+    }
   }
 
   rebuildGeometry() {
@@ -111,8 +139,8 @@ export class Corral {
 
   draw(scene) {
     this.floor = scene.add.rectangle(
-      (this.outer.left + this.outer.right) / 2,
-      (this.outer.top + this.outer.bottom) / 2,
+      this.x + this.w / 2,
+      this.y + this.h / 2,
       this.w - 4,
       this.h - 4,
       COLORS.corralFloor,
@@ -122,10 +150,12 @@ export class Corral {
 
     this.glow = scene.add.graphics().setDepth(0);
     this.neon = scene.add.graphics().setDepth(1);
+    this.glow.setPosition(this.x, this.y);
+    this.neon.setPosition(this.x, this.y);
 
     this.label = scene.add.text(
-      (this.inner.left + this.inner.right) / 2,
-      this.inner.top + 14,
+      this.x + this.w / 2,
+      this.y + this.thickness + 14,
       'CORRAL',
       {
         fontFamily: '"Press Start 2P", "Courier New", monospace',
@@ -138,6 +168,8 @@ export class Corral {
     this.label.setAlpha(0.7);
     this.label.setDepth(2);
 
+    this.drawnPulse = null;
+    this.drawnWiden = null;
     this.redraw(0);
   }
 
@@ -145,6 +177,9 @@ export class Corral {
     const glowA = 0.18 + pulse * 0.35;
     const lineA = 0.85 + pulse * 0.15;
     const inset = 1;
+
+    this.drawnPulse = pulse;
+    this.drawnWiden = this.gateWiden;
 
     this.glow.clear();
     this.glow.lineStyle(6, COLORS.corralNeon, glowA);
@@ -155,21 +190,21 @@ export class Corral {
     this.strokeCorral(this.neon, 0);
 
     if (!this.isLeftOpen()) {
-      const gateTop = this.y + this.gateStartRel;
-      const gateBot = this.y + this.gateEndRel;
+      const gateTop = this.gateStartRel;
+      const gateBot = this.gateEndRel;
       this.neon.lineStyle(2, COLORS.corralNeon, 0.35 + pulse * 0.5);
-      this.neon.lineBetween(this.x + 4, gateTop, this.x + 4, gateBot);
-      this.neon.lineBetween(this.x + 10, gateTop, this.x + 10, gateBot);
+      this.neon.lineBetween(4, gateTop, 4, gateBot);
+      this.neon.lineBetween(10, gateTop, 10, gateBot);
     }
   }
 
   strokeCorral(g, pad) {
-    const L = this.outer.left - pad;
-    const T = this.outer.top - pad;
-    const R = this.outer.right + pad;
-    const B = this.outer.bottom + pad;
-    const gateTop = this.y + this.gateStartRel;
-    const gateBot = this.y + this.gateEndRel;
+    const L = -pad;
+    const T = -pad;
+    const R = this.w + pad;
+    const B = this.h + pad;
+    const gateTop = this.gateStartRel;
+    const gateBot = this.gateEndRel;
 
     g.beginPath();
     if (this.isLeftOpen()) {
@@ -199,6 +234,38 @@ export class Corral {
       onUpdate: () => this.redraw(this.gatePulse),
     });
   }
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * Math.max(0, Math.min(1, t));
+}
+
+/** Level 1 still → L2+ vertical bob (grows) → L8+ orbit (grows). */
+export function corralMotionForLevel(level) {
+  if (level < TUNING.corralBobStartLevel) {
+    return { mode: 'still' };
+  }
+
+  if (level < TUNING.corralOrbitStartLevel) {
+    const start = TUNING.corralBobStartLevel;
+    const end = TUNING.corralOrbitStartLevel - 1;
+    let t = (level - start) / Math.max(1, end - start);
+    // From level 5 the bob becomes clearly aggressive.
+    if (level >= 5) t = Math.min(1, 0.55 + (level - 5) / Math.max(1, end - 5) * 0.45);
+    return {
+      mode: 'bob',
+      amp: lerp(TUNING.corralBobAmpMin, TUNING.corralBobAmpMax, t),
+      speed: lerp(TUNING.corralBobSpeedMin, TUNING.corralBobSpeedMax, t),
+    };
+  }
+
+  const t = (level - TUNING.corralOrbitStartLevel) / 6;
+  return {
+    mode: 'orbit',
+    rx: lerp(TUNING.corralOrbitRxMin, TUNING.corralOrbitRxMax, t),
+    ry: lerp(TUNING.corralOrbitRyMin, TUNING.corralOrbitRyMax, t),
+    speed: lerp(TUNING.corralOrbitSpeedMin, TUNING.corralOrbitSpeedMax, t),
+  };
 }
 
 function fenceRects(spec) {

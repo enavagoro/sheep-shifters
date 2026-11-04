@@ -67,8 +67,18 @@ export const TUNING = {
   powerMagnetDuration: 3,
   powerMagnetRadius: 420,
   powerWideDuration: 7,
-  corralMoveSpeed: 0.55,
-  corralMoveAmp: 92,
+  corralBobStartLevel: 2,
+  corralOrbitStartLevel: 8,
+  corralBobAmpMin: 24,
+  corralBobAmpMax: 110,
+  corralBobSpeedMin: 0.32,
+  corralBobSpeedMax: 0.7,
+  corralOrbitRxMin: 100,
+  corralOrbitRxMax: 380,
+  corralOrbitRyMin: 45,
+  corralOrbitRyMax: 150,
+  corralOrbitSpeedMin: 0.22,
+  corralOrbitSpeedMax: 0.55,
   sheepWolfInterval: 20,
   sheepWolfFirstDelay: 14,
   sheepWolfSize: 24,
@@ -107,9 +117,9 @@ export const SHEEP_COUNT = 12;
 export const SHEEP_ORIGIN = { x: 560, y: UI_BAR + 370 };
 
 export const DOGS = [
-  { name: 'Rex', number: 1, x: 168, y: UI_BAR + 600, color: 0xff3355, speed: TUNING.dogSpeed },
-  { name: 'Luna', number: 2, x: 490, y: UI_BAR + 624, color: 0x3dfff2, speed: TUNING.dogSpeed },
-  { name: 'Kira', number: 3, x: 860, y: UI_BAR + 580, color: 0xffe14a, speed: TUNING.dogSpeed },
+  { name: 'Rex', number: 1, x: 168, y: UI_BAR + 600, color: 0xff3355, speed: TUNING.dogSpeed, power: 'blast' },
+  { name: 'Luna', number: 2, x: 490, y: UI_BAR + 624, color: 0x3dfff2, speed: TUNING.dogSpeed, power: 'magnet' },
+  { name: 'Kira', number: 3, x: 860, y: UI_BAR + 580, color: 0xffe14a, speed: TUNING.dogSpeed, power: 'wide' },
 ];
 
 export const OBSTACLES = [];

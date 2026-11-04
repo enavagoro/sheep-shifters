@@ -269,24 +269,25 @@ export class HUD {
       this.drawnPower = null;
       return;
     }
-    this.drawnPower = power.id;
-    this.powerIcon.setVisible(true);
+    const charged = !power.empty;
+    this.drawnPower = `${power.id}:${charged ? 'on' : 'off'}:${power.hint || ''}`;
+    this.powerIcon.setVisible(charged);
     this.powerIcon.setStrokeStyle(2, power.color);
-    this.powerIcon.setFillStyle(power.color, 0.45);
-    this.powerSlot.setStrokeStyle(2, power.color);
-    this.powerPanel.setStrokeStyle(2, power.color);
+    this.powerIcon.setFillStyle(power.color, charged ? 0.45 : 0);
+    this.powerSlot.setStrokeStyle(2, charged ? power.color : 0x1a2a20);
+    this.powerPanel.setStrokeStyle(2, charged ? power.color : 0x1a2a20);
     this.powerLabel.setText(power.label);
-    this.powerLabel.setColor('#39ff6a');
+    this.powerLabel.setColor(charged ? '#39ff6a' : '#6a7a70');
     this.powerHint.setText(power.hint);
-    this.powerHint.setColor('#ffe14a');
+    this.powerHint.setColor(charged ? '#ffe14a' : '#6a7a70');
   }
 
   refresh(state, controller, warningOn = false, audio = null, power = null) {
-    const powerId = power?.id || null;
-    const powerHint = power?.hint || '';
-    if (powerId !== this.drawnPower || powerHint !== this.drawnPowerHint) {
+    const powerKey = power
+      ? `${power.id}:${power.empty ? 'off' : 'on'}:${power.hint || ''}`
+      : null;
+    if (powerKey !== this.drawnPower) {
       this.setPower(power);
-      this.drawnPowerHint = powerHint;
     }
     const scoreLabel = `SCORE ${state.score}`;
     const bestLabel = `BEST ${state.best}`;

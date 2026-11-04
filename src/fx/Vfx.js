@@ -53,7 +53,7 @@ export class Vfx {
   trail(x, y, color, dt) {
     this.trailCooldown -= dt;
     if (this.trailCooldown > 0) return;
-    this.trailCooldown = 0.028;
+    this.trailCooldown = 0.07;
     const speck = this.scene.add.rectangle(x, y, 6, 6, color)
       .setDepth(5)
       .setAlpha(0.55);

@@ -50,8 +50,7 @@ export class GameScene extends Phaser.Scene {
     this.raid = null;
     this.spawnsLocked = false;
     this.powerDrops = [];
-    this.heldPower = null;
-    this.activeEffect = null;
+    this.activeEffects = [];
     this.powerTimer = TUNING.powerFirstDelay;
     this.vfx = new Vfx(this);
     this.hud = new HUD(this);
@@ -141,12 +140,15 @@ export class GameScene extends Phaser.Scene {
       }
       this.updatePowers(realDt);
       this.updateActiveEffect(realDt);
-      const corralMove = this.corral.update(realDt);
-      this.refreshColliders();
-      if (corralMove.dy) {
+      const corralMove = this.corral.update(realDt, this.state.level);
+      if (corralMove.dx || corralMove.dy) {
+        this.refreshColliders();
         for (const animal of this.sheep) {
           if (animal.removed || animal.lost) continue;
-          if (animal.secured || animal.collected) animal.y += corralMove.dy;
+          if (animal.secured || animal.collected) {
+            animal.x += corralMove.dx;
+            animal.y += corralMove.dy;
+          }
         }
       }
       for (const wolf of this.wolves) {
@@ -162,8 +164,9 @@ export class GameScene extends Phaser.Scene {
         lureKilled.push(...ramSheepWolves(this.sheepWolves, this.dogController.active));
         moveLeft -= step;
       }
-      const magnet = this.activeEffect?.id === 'magnet'
-        ? this.dogController.active
+      const magnetFx = this.activeEffects.find((fx) => fx.id === 'magnet');
+      const magnet = magnetFx
+        ? (magnetFx.dog || this.dogController.active)
         : null;
       updateFlock(
         this.sheep,
@@ -300,7 +303,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const drop of this.powerDrops) drop.take?.();
     this.powerDrops = [];
-    this.clearActiveEffect();
+    this.clearAllEffects();
 
     for (const animal of this.sheep) {
       if (!animal.removed) animal.remove();
@@ -373,10 +376,12 @@ export class GameScene extends Phaser.Scene {
       drop.update(dt);
       const dist = Math.hypot(dog.x - drop.x, dog.y - drop.y);
       if (dist > TUNING.powerPickupRadius) continue;
+      // Only the matching dog can claim their bone (Rex/blast, Luna/magnet, Kira/wide).
+      if (drop.kind !== dog.power) continue;
       const kind = drop.take();
       if (!kind) continue;
-      this.heldPower = kind;
-      const color = POWER_INFO[kind]?.color ?? COLORS.frame;
+      dog.heldPower = kind;
+      const color = POWER_INFO[kind]?.color ?? dog.color;
       this.vfx.burst(drop.x, drop.y, color, 10);
       this.sfx.play('score');
       this.vfx.shake(0.003, 50);
@@ -385,22 +390,39 @@ export class GameScene extends Phaser.Scene {
   }
 
   hudPowerInfo() {
-    if (this.heldPower) return POWER_INFO[this.heldPower];
-    const effect = this.activeEffect;
+    const dog = this.dogController.active;
+    if (dog?.heldPower) {
+      return {
+        ...POWER_INFO[dog.heldPower],
+        color: dog.color,
+        owner: dog.name,
+      };
+    }
+    const effect = this.activeEffects.find((fx) => fx.id === dog?.power)
+      || this.activeEffects[0];
     if (effect && POWER_INFO[effect.id]) {
       return {
         ...POWER_INFO[effect.id],
         hint: `${Math.ceil(effect.timer)}s`,
+        color: effect.dog?.color ?? POWER_INFO[effect.id].color,
+      };
+    }
+    if (dog?.power && POWER_INFO[dog.power]) {
+      return {
+        ...POWER_INFO[dog.power],
+        hint: '—',
+        color: dog.color,
+        empty: true,
       };
     }
     return null;
   }
 
   activatePower() {
-    if (!this.heldPower || this.state.paused || this.state.over) return;
-    if (this.activeEffect) return;
-    const kind = this.heldPower;
-    this.heldPower = null;
+    const dog = this.dogController.active;
+    if (!dog?.heldPower || this.state.paused || this.state.over) return;
+    const kind = dog.heldPower;
+    dog.heldPower = null;
     this.sfx.play('bark');
 
     if (kind === 'blast') this.activateBlast();
@@ -410,33 +432,37 @@ export class GameScene extends Phaser.Scene {
 
   activateMagnet() {
     const dog = this.dogController.active;
-    this.clearActiveEffect();
-    this.activeEffect = {
+    this.clearEffectsById('magnet');
+    this.activeEffects.push({
       id: 'magnet',
+      dog,
       timer: TUNING.powerMagnetDuration,
       pulse: 0,
       aura: this.add.circle(dog.x, dog.y, 34, POWER_INFO.magnet.color, 0.16)
         .setStrokeStyle(2, POWER_INFO.magnet.color, 0.85)
         .setDepth(8),
-    };
+    });
     this.vfx.ring(dog.x, dog.y, POWER_INFO.magnet.color, 20, 90, 320);
     this.vfx.flashColor(POWER_INFO.magnet.color, 90);
     this.sfx.play('switch');
   }
 
   activateWide() {
-    this.clearActiveEffect();
-    this.activeEffect = {
+    const alreadyWide = this.activeEffects.some((fx) => fx.id === 'wide');
+    this.clearEffectsById('wide', { keepGateOpen: true });
+    this.activeEffects.push({
       id: 'wide',
       timer: TUNING.powerWideDuration,
       pulse: 0,
       widen: 0,
       expanding: true,
-    };
+    });
     this.sfx.play('expand');
     this.vfx.flashColor(POWER_INFO.wide.color, 90);
-    this.corral.pulseEntrance();
-    this.animateGateWiden(this.corral.maxGateWiden(), 420, true);
+    if (!alreadyWide) {
+      this.corral.pulseEntrance();
+      this.animateGateWiden(this.corral.maxGateWiden(), 420, true);
+    }
   }
 
   animateGateWiden(target, duration, opening) {
@@ -462,50 +488,65 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateActiveEffect(dt) {
-    const effect = this.activeEffect;
-    if (!effect) return;
-    effect.timer -= dt;
-    effect.pulse = (effect.pulse || 0) + dt * 6;
+    if (!this.activeEffects.length) return;
+    const expired = [];
+    for (const effect of this.activeEffects) {
+      effect.timer -= dt;
+      effect.pulse = (effect.pulse || 0) + dt * 6;
 
-    if (effect.id === 'magnet' && effect.aura) {
-      const dog = this.dogController.active;
-      const pulse = 1 + Math.sin(effect.pulse) * 0.12;
-      effect.aura.setPosition(dog.x, dog.y);
-      effect.aura.setScale(pulse);
-      effect.aura.setAlpha(0.12 + Math.sin(effect.pulse * 1.3) * 0.08);
+      if (effect.id === 'magnet' && effect.aura) {
+        const dog = effect.dog || this.dogController.active;
+        const pulse = 1 + Math.sin(effect.pulse) * 0.12;
+        effect.aura.setPosition(dog.x, dog.y);
+        effect.aura.setScale(pulse);
+        effect.aura.setAlpha(0.12 + Math.sin(effect.pulse * 1.3) * 0.08);
+      }
+
+      if (effect.id === 'wide' && ((effect.pulse * 10) | 0) !== (effect.drawnPulse | 0)) {
+        effect.drawnPulse = (effect.pulse * 10) | 0;
+        this.corral.redraw(0.35 + Math.sin(effect.pulse) * 0.2);
+      }
+
+      if (effect.timer <= 0) expired.push(effect);
     }
-
-    if (effect.id === 'wide') {
-      this.corral.redraw(0.35 + Math.sin(effect.pulse) * 0.2);
-    }
-
-    if (effect.timer <= 0) this.clearActiveEffect();
+    for (const effect of expired) this.clearEffect(effect);
   }
 
-  clearActiveEffect() {
-    if (!this.activeEffect) return;
-    const effect = this.activeEffect;
+  clearEffect(effect, { keepGateOpen = false } = {}) {
+    if (!effect) return;
     effect.aura?.destroy?.();
     effect.veil?.destroy?.();
-    if (effect.id === 'wide' && this.corral.gateWiden > 0) {
+    this.activeEffects = this.activeEffects.filter((fx) => fx !== effect);
+    if (effect.id === 'wide' && !keepGateOpen && this.corral.gateWiden > 0
+      && !this.activeEffects.some((fx) => fx.id === 'wide')) {
       this.sfx.play('contract');
       this.animateGateWiden(0, 320, false);
     }
-    this.activeEffect = null;
+  }
+
+  clearEffectsById(id, opts = {}) {
+    for (const effect of [...this.activeEffects]) {
+      if (effect.id === id) this.clearEffect(effect, opts);
+    }
+  }
+
+  clearAllEffects() {
+    for (const effect of [...this.activeEffects]) this.clearEffect(effect);
   }
 
   activateBlast() {
     const dog = this.dogController.active;
-    const radius = TUNING.powerBlastRadius;
-    this.vfx.ring(dog.x, dog.y, 0x39ff6a, 24, radius, 420);
-    this.vfx.flashColor(0x39ff6a, 120);
-    this.vfx.shake(0.008, 140);
+    const midX = (BOUNDS.left + BOUNDS.right) / 2;
+    const midY = (BOUNDS.top + BOUNDS.bottom) / 2;
+    const color = dog?.color ?? POWER_INFO.blast.color;
+    this.vfx.ring(midX, midY, color, 40, 720, 520);
+    this.vfx.flashColor(color, 160);
+    this.vfx.shake(0.012, 180);
     this.sfx.play('kill');
 
     let kills = 0;
     for (const wolf of this.wolves) {
       if (!wolf.active) continue;
-      if (Math.hypot(wolf.x - dog.x, wolf.y - dog.y) > radius) continue;
       this.state.add(TUNING.wolfPoints);
       this.vfx.scorePop(wolf.x, wolf.y, TUNING.wolfPoints);
       this.vfx.burst(wolf.x, wolf.y, 0xff3355, 8);
@@ -514,7 +555,6 @@ export class GameScene extends Phaser.Scene {
     }
     for (const lure of this.sheepWolves) {
       if (!lure.active) continue;
-      if (Math.hypot(lure.x - dog.x, lure.y - dog.y) > radius) continue;
       this.state.add(TUNING.wolfPoints);
       this.vfx.scorePop(lure.x, lure.y, TUNING.wolfPoints);
       this.vfx.burst(lure.x, lure.y, 0xff3355, 8);

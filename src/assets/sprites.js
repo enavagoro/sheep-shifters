@@ -4,10 +4,15 @@ export const SPRITES = {
   sheep: { key: 'sheep', path: 'assets/sheep.png', frameWidth: 256, frameHeight: 135, displayHeight: 30 },
   wolf: { key: 'wolf', path: 'assets/wolf.png', frameWidth: 256, frameHeight: 152, displayHeight: 36 },
   sheepwolf: { key: 'sheepwolf', path: 'assets/sheepwolf.png', frameWidth: 256, frameHeight: 152, displayHeight: 34 },
+  bone: { key: 'bone', path: 'assets/bone.png', frameWidth: 574, frameHeight: 341, displayHeight: 28 },
 };
 
 export function preloadSprites(scene) {
   for (const sheet of Object.values(SPRITES)) {
+    if (sheet.key === 'bone') {
+      scene.load.image(sheet.key, sheet.path);
+      continue;
+    }
     scene.load.spritesheet(sheet.key, sheet.path, {
       frameWidth: sheet.frameWidth,
       frameHeight: sheet.frameHeight,

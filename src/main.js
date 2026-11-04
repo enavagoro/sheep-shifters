@@ -6,13 +6,15 @@ import { GameScene } from './scenes/GameScene.js';
 async function boot() {
   if (document.fonts?.load) {
     try {
-      await Promise.all([
-        document.fonts.load('20px "Press Start 2P"'),
-        document.fonts.load('36px "Press Start 2P"'),
+      await Promise.race([
+        Promise.all([
+          document.fonts.load('20px "Press Start 2P"'),
+          document.fonts.load('36px "Press Start 2P"'),
+        ]).then(() => document.fonts.ready),
+        new Promise((resolve) => setTimeout(resolve, 1200)),
       ]);
-      await document.fonts.ready;
     } catch {
-      
+      // Fonts are optional — never block boot.
     }
   }
 

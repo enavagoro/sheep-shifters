@@ -15,6 +15,8 @@ export class Dog {
     this.number = config.number;
     this.speed = config.speed;
     this.color = config.color;
+    this.power = config.power;
+    this.heldPower = null;
     this.size = TUNING.dogSize;
     this.x = config.x;
     this.y = config.y;
@@ -24,7 +26,14 @@ export class Dog {
     this.pulseT = Math.random() * 10;
     this.moving = false;
 
-    this.outline = scene.add.graphics();
+    this.outline = scene.add.rectangle(this.x, this.y, this.size + 16, this.size + 16)
+      .setStrokeStyle(2, COLORS.outline, 0.7)
+      .setFillStyle(0, 0)
+      .setDepth(0);
+    this.innerRing = scene.add.rectangle(this.x, this.y, this.size + 4, this.size + 4)
+      .setStrokeStyle(1, this.color, 0.85)
+      .setFillStyle(0, 0)
+      .setDepth(0);
     this.body = scene.add.sprite(this.x, this.y, 'dog', 0);
     this.body.setScale(spriteScale(SPRITES.dog));
     this.body.setTint(this.color);
@@ -60,21 +69,22 @@ export class Dog {
       this.body.setDepth(depth);
       this.label.setDepth(depth + 3);
       this.outline.setDepth(depth - 1);
+      this.innerRing.setDepth(depth - 1);
     }
 
     const pulse = this.active ? 1 + Math.sin(this.pulseT * 8) * 0.05 : 1;
     this.body.setScale(spriteScale(SPRITES.dog) * pulse);
 
-    this.outline.clear();
-    if (!this.active) return;
+    const show = this.active;
+    this.outline.setVisible(show);
+    this.innerRing.setVisible(show);
+    if (!show) return;
 
+    this.outline.setPosition(this.x, this.y);
+    this.innerRing.setPosition(this.x, this.y);
     const glow = 0.55 + Math.sin(this.pulseT * 10) * 0.35;
     const pad = 8 + Math.sin(this.pulseT * 10) * 1.5;
-    const w = this.size + pad * 2;
-    const h = this.size + pad * 2;
-    this.outline.lineStyle(2, COLORS.outline, glow);
-    this.outline.strokeRect(this.x - w / 2, this.y - h / 2, w, h);
-    this.outline.lineStyle(1, this.color, 0.85);
-    this.outline.strokeRect(this.x - this.size / 2 - 2, this.y - this.size / 2 - 2, this.size + 4, this.size + 4);
+    this.outline.setSize(this.size + pad * 2, this.size + pad * 2);
+    this.outline.setStrokeStyle(2, COLORS.outline, glow);
   }
 }
