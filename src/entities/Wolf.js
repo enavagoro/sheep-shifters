@@ -51,15 +51,24 @@ export function spawnWolfFromEdge() {
   return spawnWolfFromSide(sides[Math.floor(Math.random() * sides.length)]);
 }
 
-export function spawnWolfFromSide(side, slot = 0.5) {
+export function spawnWolfFromSide(side, slot = 0.5, options = {}) {
   const gap = TUNING.wolfSize + 18;
   const t = Math.max(0.12, Math.min(0.88, slot));
-  
-  const playRight = CORRAL.x - 36;
+  const fullRim = !!options.fullRim;
+
+  const playRight = fullRim ? BOUNDS.right : (CORRAL.x - 36);
 
   if (side === 'right') {
-    
-    return spawnWolfFromSide(Math.random() < 0.5 ? 'top' : 'bottom', 0.78 + Math.random() * 0.08);
+    if (!fullRim) {
+      return spawnWolfFromSide(Math.random() < 0.5 ? 'top' : 'bottom', 0.78 + Math.random() * 0.08);
+    }
+    return {
+      x: BOUNDS.right + gap,
+      y: BOUNDS.top + (BOUNDS.bottom - BOUNDS.top) * t,
+      vx: -1,
+      vy: 0,
+      entering: true,
+    };
   }
 
   if (side === 'left') {

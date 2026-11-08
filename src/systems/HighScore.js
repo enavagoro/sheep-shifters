@@ -15,12 +15,11 @@ export function saveBestScore(score) {
   try {
     localStorage.setItem(KEY, String(next));
   } catch {
-    /* ignore quota / private mode */
+
   }
   return next;
 }
 
-/** Returns true when this run sets a new personal best. */
 export function submitScore(score) {
   const best = loadBestScore();
   if (score > best) {

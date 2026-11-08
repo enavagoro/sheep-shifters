@@ -59,40 +59,22 @@ export class Corral {
     const prevY = this.y;
     const motion = corralMotionForLevel(level);
 
+    this.x = this.homeX;
     if (motion.mode === 'still') {
-      this.x = this.homeX;
       this.y = this.homeY;
-    } else if (motion.mode === 'bob') {
+    } else {
       this.moveT += dt * motion.speed;
       const minY = BOUNDS.top + 18;
       const maxY = BOUNDS.bottom - this.h - 18;
       const mid = Math.max(minY, Math.min(maxY, this.homeY));
       const amp = Math.min(motion.amp, Math.min(mid - minY, maxY - mid));
-      this.x = this.homeX;
       this.y = mid + Math.sin(this.moveT) * amp;
-    } else {
-      this.moveT += dt * motion.speed;
-      const cx = (BOUNDS.left + BOUNDS.right) / 2;
-      const cy = (BOUNDS.top + BOUNDS.bottom) / 2;
-      const pad = 18;
-      const maxRx = Math.max(40, Math.min(
-        cx - (BOUNDS.left + pad + this.w / 2),
-        (BOUNDS.right - pad - this.w / 2) - cx,
-      ));
-      const maxRy = Math.max(40, Math.min(
-        cy - (BOUNDS.top + pad + this.h / 2),
-        (BOUNDS.bottom - pad - this.h / 2) - cy,
-      ));
-      const rx = Math.min(motion.rx, maxRx);
-      const ry = Math.min(motion.ry, maxRy);
-      this.x = cx + Math.cos(this.moveT) * rx - this.w / 2;
-      this.y = cy + Math.sin(this.moveT) * ry - this.h / 2;
     }
 
     const dx = this.x - prevX;
     const dy = this.y - prevY;
     this.rebuildGeometry();
-    this.syncVisuals();
+    this.syncVisuals(false);
     return { dx, dy, fences: this.fences };
   }
 
@@ -102,7 +84,13 @@ export class Corral {
     this.glow.setPosition(this.x, this.y);
     this.neon.setPosition(this.x, this.y);
     const pulse = this.gatePulse || (this.gateWiden > 0 ? 0.45 : 0);
-    if (forceRedraw || pulse !== this.drawnPulse || this.gateWiden !== this.drawnWiden) {
+
+    const pulseKey = Math.round(pulse * 20) / 20;
+    if (
+      forceRedraw
+      || pulseKey !== this.drawnPulse
+      || this.gateWiden !== this.drawnWiden
+    ) {
       this.redraw(pulse);
     }
   }
@@ -135,6 +123,13 @@ export class Corral {
     this.rebuildGeometry();
     this.redraw(this.gatePulse || (this.gateWiden > 0 ? 0.45 : 0));
     return this.fences;
+  }
+
+  gateCenter() {
+    return {
+      x: this.outer.left + 10,
+      y: this.y + (this.gateStartRel + this.gateEndRel) * 0.5,
+    };
   }
 
   draw(scene) {
@@ -178,7 +173,7 @@ export class Corral {
     const lineA = 0.85 + pulse * 0.15;
     const inset = 1;
 
-    this.drawnPulse = pulse;
+    this.drawnPulse = Math.round(pulse * 20) / 20;
     this.drawnWiden = this.gateWiden;
 
     this.glow.clear();
@@ -223,7 +218,6 @@ export class Corral {
     g.strokePath();
   }
 
-  
   pulseEntrance() {
     this.gatePulse = 1;
     this.scene.tweens.add({
@@ -240,31 +234,16 @@ function lerp(a, b, t) {
   return a + (b - a) * Math.max(0, Math.min(1, t));
 }
 
-/** Level 1 still → L2+ vertical bob (grows) → L8+ orbit (grows). */
 export function corralMotionForLevel(level) {
   if (level < TUNING.corralBobStartLevel) {
     return { mode: 'still' };
   }
 
-  if (level < TUNING.corralOrbitStartLevel) {
-    const start = TUNING.corralBobStartLevel;
-    const end = TUNING.corralOrbitStartLevel - 1;
-    let t = (level - start) / Math.max(1, end - start);
-    // From level 5 the bob becomes clearly aggressive.
-    if (level >= 5) t = Math.min(1, 0.55 + (level - 5) / Math.max(1, end - 5) * 0.45);
-    return {
-      mode: 'bob',
-      amp: lerp(TUNING.corralBobAmpMin, TUNING.corralBobAmpMax, t),
-      speed: lerp(TUNING.corralBobSpeedMin, TUNING.corralBobSpeedMax, t),
-    };
-  }
-
-  const t = (level - TUNING.corralOrbitStartLevel) / 6;
+  const t = Math.min(1, (level - TUNING.corralBobStartLevel) / 8);
   return {
-    mode: 'orbit',
-    rx: lerp(TUNING.corralOrbitRxMin, TUNING.corralOrbitRxMax, t),
-    ry: lerp(TUNING.corralOrbitRyMin, TUNING.corralOrbitRyMax, t),
-    speed: lerp(TUNING.corralOrbitSpeedMin, TUNING.corralOrbitSpeedMax, t),
+    mode: 'bob',
+    amp: lerp(TUNING.corralBobAmpMin, TUNING.corralBobAmpMax, t),
+    speed: lerp(TUNING.corralBobSpeedMin, TUNING.corralBobSpeedMax, t),
   };
 }
 

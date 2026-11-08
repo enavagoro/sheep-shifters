@@ -21,7 +21,6 @@ export class PulseField {
       COLORS.grass,
     ).setDepth(-14);
 
-    // Static grid drawn once — scrolling redraw was killing frame time.
     this.grid = scene.add.graphics().setDepth(-13);
     this.drawStaticGrid(COLORS.grid);
     this.frame = null;

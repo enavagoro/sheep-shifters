@@ -69,7 +69,7 @@ export class SheepWolf {
 }
 
 export function spawnSheepWolfFromEdge() {
-  
+
   const slot = 0.42 + Math.random() * 0.38;
   const point = spawnWolfFromSide('left', slot);
   return { ...point, edge: 'left' };

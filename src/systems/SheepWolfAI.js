@@ -1,5 +1,11 @@
 import { TUNING } from '../config.js';
-import { clampToBounds, obstacleRepulsion, resolveObstacles } from './collision.js';
+import {
+  clampToBounds,
+  ejectFromObstacles,
+  obstacleRepulsion,
+  resolveObstacles,
+  unstickNearEdge,
+} from './collision.js';
 
 export function updateSheepWolves(lures, dt, sheep, dogs, fieldObstacles, colliders, bounds, vfx = null, activeDog = null) {
   const killed = [];
@@ -68,7 +74,7 @@ function actLikeSheep(lure, dt, fieldObstacles, colliders, bounds, vfx) {
     lure.vy = 0;
     lure.calling = true;
     lure.bleatPulse = (lure.bleatPulse || 0) + dt;
-    
+
     if (lure.bleatPulse > 0.55 && !lure.bleatEcho) {
       lure.bleatEcho = true;
       const echo = Math.random() < 0.5 ? 'BAA' : 'BEE';
@@ -81,9 +87,8 @@ function actLikeSheep(lure, dt, fieldObstacles, colliders, bounds, vfx) {
     return;
   }
 
-  
   lure.calling = false;
-  patrolLeft(lure, dt, fieldObstacles, colliders, bounds);
+  patrolField(lure, dt, fieldObstacles, colliders, bounds);
   if (lure.phaseTimer <= 0) {
     lure.startBleat(vfx);
   }
@@ -92,9 +97,9 @@ function actLikeSheep(lure, dt, fieldObstacles, colliders, bounds, vfx) {
 function hitByDog(lure, dogs) {
   const reach = TUNING.sheepWolfHitRadius;
   for (const dog of dogs) {
-    
+
     if (Math.hypot(lure.x - dog.x, lure.y - dog.y) <= reach) return true;
-    
+
     if (dog.prevX != null && dog.prevY != null) {
       if (pointSegmentDist(lure.x, lure.y, dog.prevX, dog.prevY, dog.x, dog.y) <= reach) {
         return true;
@@ -139,45 +144,62 @@ function enterMap(lure, dt, fieldObstacles, colliders, bounds, vfx = null) {
   let dx = tx - lure.x;
   let dy = ty - lure.y;
   const len = Math.hypot(dx, dy) || 1;
-  move(lure, dx / len, dy / len, lure.speed, dt, fieldObstacles, colliders);
+  move(lure, dx / len, dy / len, lure.speed, dt, fieldObstacles, colliders, bounds);
 
   if (Math.hypot(lure.x - tx, lure.y - ty) < 18) {
     lure.entering = false;
-    
+
     lure.startBleat(vfx);
   }
 }
 
-function patrolLeft(lure, dt, fieldObstacles, colliders, bounds) {
-  const margin = TUNING.sheepWolfEdgeMargin;
-  const top = bounds.top + (bounds.bottom - bounds.top) * 0.38;
-  const bottom = bounds.bottom - margin;
-  lure.patrolT += dt * 0.5;
-  const mid = (top + bottom) / 2;
-  const span = (bottom - top) * 0.42;
+function patrolField(lure, dt, fieldObstacles, colliders, bounds) {
+  if (lure.roamAngle == null) {
+    lure.roamAngle = Math.atan2(lure.vy || 0, lure.vx || 1);
+  }
+  lure.patrolT = (lure.patrolT || 0) + dt;
+  lure.roamAngle += Math.sin(lure.patrolT * 0.7) * 0.55 * dt
+    + (Math.random() - 0.5) * 1.6 * dt;
 
-  const tx = bounds.left + margin;
-  const ty = clamp(mid + Math.sin(lure.patrolT) * span, top, bottom);
+  const avoid = obstacleRepulsion(lure, fieldObstacles, 64);
+  let dirX = Math.cos(lure.roamAngle) + avoid.x * 2.8;
+  let dirY = Math.sin(lure.roamAngle) + avoid.y * 2.8;
+  const len = Math.hypot(dirX, dirY) || 1;
+  dirX /= len;
+  dirY /= len;
+  lure.roamAngle = Math.atan2(dirY, dirX);
 
-  let dx = tx - lure.x;
-  let dy = ty - lure.y;
-  const len = Math.hypot(dx, dy) || 1;
-  move(lure, dx / len, dy / len, lure.speed * 0.75, dt, fieldObstacles, colliders);
+  move(lure, dirX, dirY, lure.speed * 0.8, dt, fieldObstacles, colliders, bounds);
   clampToBounds(lure, bounds);
+  ejectFromObstacles(lure, colliders);
 }
 
-function move(lure, dirX, dirY, speed, dt, fieldObstacles, colliders) {
-  const avoid = obstacleRepulsion(lure, fieldObstacles, 34);
-  let vx = dirX * speed + avoid.x * 160;
-  let vy = dirY * speed + avoid.y * 160;
+function move(lure, dirX, dirY, speed, dt, fieldObstacles, colliders, bounds = null) {
+  const avoid = obstacleRepulsion(lure, fieldObstacles, 70);
+  let vx = dirX * speed + avoid.x * 280;
+  let vy = dirY * speed + avoid.y * 280;
   const magnitude = Math.hypot(vx, vy) || 1;
   lure.vx = (vx / magnitude) * speed;
   lure.vy = (vy / magnitude) * speed;
+  const prevX = lure.x;
+  const prevY = lure.y;
   lure.x += lure.vx * dt;
   lure.y += lure.vy * dt;
   resolveObstacles(lure, colliders);
-}
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+  const moved = Math.hypot(lure.x - prevX, lure.y - prevY);
+  const want = speed * dt;
+  if (want > 0.5 && moved < want * 0.2) {
+    lure.x = prevX;
+    lure.y = prevY + Math.sign(dirY || 1) * want;
+    resolveObstacles(lure, colliders);
+    if (Math.hypot(lure.x - prevX, lure.y - prevY) < want * 0.2) {
+      lure.x = prevX + Math.sign(dirX || 1) * want;
+      lure.y = prevY;
+      resolveObstacles(lure, colliders);
+    }
+  }
+
+  ejectFromObstacles(lure, colliders);
+  if (bounds) unstickNearEdge(lure, colliders, bounds);
 }

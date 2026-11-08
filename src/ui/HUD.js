@@ -147,7 +147,6 @@ export class HUD {
     this.pauseHint.setDepth(1200);
     this.pauseHint.setVisible(false);
 
-    
     const bottomY = GAME_HEIGHT - UI_BOTTOM / 2;
     scene.add.rectangle(GAME_WIDTH / 2, bottomY, GAME_WIDTH, UI_BOTTOM, COLORS.void)
       .setDepth(1000)
@@ -186,7 +185,7 @@ export class HUD {
       resolution: 2,
     }).setOrigin(0.5).setDepth(1003).setScrollFactor(0);
 
-    this.warning = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'WARNING  WARNING  WARNING', {
+    this.warning = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 150, 'WARNING  WARNING  WARNING', {
       fontFamily: SCORE_FONT,
       fontSize: '18px',
       color: '#ff3355',

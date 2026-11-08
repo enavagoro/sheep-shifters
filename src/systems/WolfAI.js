@@ -1,5 +1,11 @@
 import { TUNING } from '../config.js';
-import { clampToBounds, obstacleRepulsion, resolveObstacles } from './collision.js';
+import {
+  boundsRepulsion,
+  clampToBounds,
+  obstacleRepulsion,
+  resolveObstacles,
+  unstickNearEdge,
+} from './collision.js';
 
 export function updateWolves(wolves, dt, sheep, dogs, fieldObstacles, colliders, bounds, hitRadius = TUNING.wolfHitRadius) {
   const killed = [];
@@ -22,14 +28,14 @@ export function updateWolves(wolves, dt, sheep, dogs, fieldObstacles, colliders,
     if (wasDodging && wolf.dodgeTime === 0) wolf.persistTime = TUNING.wolfPersistTime;
     wolf.persistTime = Math.max(0, (wolf.persistTime || 0) - dt);
 
+    wolf.spawnGrace = Math.max(0, (wolf.spawnGrace || 0) - dt);
+
     if (wolf.entering) {
       enterMap(wolf, dt, fieldObstacles, colliders, bounds);
     } else if ((wolf.dodgeTime || 0) > 0) {
-      moveWolf(wolf, wolf.fleeX, wolf.fleeY, wolf.speed, dt, fieldObstacles, colliders);
-      clampToBounds(wolf, bounds);
+      moveWolf(wolf, wolf.fleeX, wolf.fleeY, wolf.speed, dt, fieldObstacles, colliders, bounds);
     } else if ((wolf.persistTime || 0) > 0) {
-      chaseSheep(wolf, sheep, dt, fieldObstacles, colliders);
-      clampToBounds(wolf, bounds);
+      chaseSheep(wolf, sheep, dt, fieldObstacles, colliders, bounds);
     } else {
       const dog = nearestWithin(wolf, dogs, () => true, TUNING.wolfDodgeRadius);
       if (dog) {
@@ -39,11 +45,10 @@ export function updateWolves(wolves, dt, sheep, dogs, fieldObstacles, colliders,
         wolf.fleeX = awayX / away;
         wolf.fleeY = awayY / away;
         wolf.dodgeTime = TUNING.wolfDodgeTime;
-        moveWolf(wolf, wolf.fleeX, wolf.fleeY, wolf.speed, dt, fieldObstacles, colliders);
+        moveWolf(wolf, wolf.fleeX, wolf.fleeY, wolf.speed, dt, fieldObstacles, colliders, bounds);
       } else {
-        chaseSheep(wolf, sheep, dt, fieldObstacles, colliders);
+        chaseSheep(wolf, sheep, dt, fieldObstacles, colliders, bounds);
       }
-      clampToBounds(wolf, bounds);
     }
     const ram = nearestWithin(wolf, dogs, () => true, ramRadius);
     if (ram) {
@@ -52,6 +57,8 @@ export function updateWolves(wolves, dt, sheep, dogs, fieldObstacles, colliders,
       wolf.active = false;
       continue;
     }
+
+    if (wolf.entering || (wolf.spawnGrace || 0) > 0) continue;
 
     const victim = nearestWithin(wolf, sheep, (animal) => !animal.lost && !animal.secured, TUNING.wolfCatchRadius);
     if (!victim) continue;
@@ -74,17 +81,21 @@ function enterMap(wolf, dt, fieldObstacles, colliders, bounds) {
     dirX = midX - wolf.x;
     dirY = midY - wolf.y;
   }
-  const direction = Math.hypot(dirX, dirY) || 1;
-  moveWolf(wolf, dirX / direction, dirY / direction, wolf.speed, dt, fieldObstacles, colliders);
 
-  const inside = wolf.x > bounds.left + wolf.size
-    && wolf.x < bounds.right - wolf.size
-    && wolf.y > bounds.top + wolf.size
-    && wolf.y < bounds.bottom - wolf.size;
+  dirX += (midX - wolf.x) * 0.002;
+  dirY += (midY - wolf.y) * 0.002;
+  const direction = Math.hypot(dirX, dirY) || 1;
+  moveWolf(wolf, dirX / direction, dirY / direction, wolf.speed, dt, fieldObstacles, colliders, bounds);
+
+  const pad = wolf.size + 8;
+  const inside = wolf.x > bounds.left + pad
+    && wolf.x < bounds.right - pad
+    && wolf.y > bounds.top + pad
+    && wolf.y < bounds.bottom - pad;
   if (inside) wolf.entering = false;
 }
 
-function chaseSheep(wolf, sheep, dt, fieldObstacles, colliders) {
+function chaseSheep(wolf, sheep, dt, fieldObstacles, colliders, bounds) {
   const target = nearestWithin(wolf, sheep, (animal) => !animal.lost && !animal.secured, Infinity);
   let dirX = wolf.vx;
   let dirY = wolf.vy;
@@ -97,7 +108,7 @@ function chaseSheep(wolf, sheep, dt, fieldObstacles, colliders) {
     dirY = Math.sin(wolf.roamAngle);
   }
   const direction = Math.hypot(dirX, dirY) || 1;
-  moveWolf(wolf, dirX / direction, dirY / direction, wolf.speed, dt, fieldObstacles, colliders);
+  moveWolf(wolf, dirX / direction, dirY / direction, wolf.speed, dt, fieldObstacles, colliders, bounds);
 }
 
 function roam(wolf, dt) {
@@ -110,16 +121,55 @@ function roam(wolf, dt) {
   wolf.roamAngle += wolf.roamTurn * dt;
 }
 
-function moveWolf(wolf, dirX, dirY, speed, dt, fieldObstacles, colliders) {
-  const avoid = obstacleRepulsion(wolf, fieldObstacles, 34);
-  let vx = dirX * speed + avoid.x * 180;
-  let vy = dirY * speed + avoid.y * 180;
+function moveWolf(wolf, dirX, dirY, speed, dt, fieldObstacles, colliders, bounds) {
+  const avoid = obstacleRepulsion(wolf, fieldObstacles, 70);
+  const edge = bounds ? boundsRepulsion(wolf, bounds, 64) : { x: 0, y: 0 };
+  let vx = dirX * speed + avoid.x * 320 + edge.x * 240;
+  let vy = dirY * speed + avoid.y * 320 + edge.y * 240;
   const magnitude = Math.hypot(vx, vy) || 1;
   wolf.vx = (vx / magnitude) * speed;
   wolf.vy = (vy / magnitude) * speed;
+
+  const prevX = wolf.x;
+  const prevY = wolf.y;
   wolf.x += wolf.vx * dt;
   wolf.y += wolf.vy * dt;
   resolveObstacles(wolf, colliders);
+
+  const moved = Math.hypot(wolf.x - prevX, wolf.y - prevY);
+  const want = speed * dt;
+  if (want > 0.5 && moved < want * 0.2) {
+    wolf.x = prevX;
+    wolf.y = prevY + Math.sign(wolf.vy || dirY || 1) * want;
+    resolveObstacles(wolf, colliders);
+    const slidY = Math.hypot(wolf.x - prevX, wolf.y - prevY);
+    if (slidY < want * 0.2) {
+      wolf.x = prevX + Math.sign(wolf.vx || dirX || 1) * want;
+      wolf.y = prevY;
+      resolveObstacles(wolf, colliders);
+    }
+  }
+
+  if (bounds) unstickNearEdge(wolf, colliders, bounds);
+
+  const movedAfter = Math.hypot(wolf.x - prevX, wolf.y - prevY);
+  if (want > 0.5 && movedAfter < want * 0.12) {
+    wolf.stuckT = (wolf.stuckT || 0) + dt;
+  } else {
+    wolf.stuckT = 0;
+  }
+  if ((wolf.stuckT || 0) > 0.28 && bounds) {
+    const cx = (bounds.left + bounds.right) * 0.5;
+    const cy = (bounds.top + bounds.bottom) * 0.5;
+    const dx = cx - wolf.x;
+    const dy = cy - wolf.y;
+    const len = Math.hypot(dx, dy) || 1;
+    wolf.x += (dx / len) * 28;
+    wolf.y += (dy / len) * 28;
+    resolveObstacles(wolf, colliders);
+    unstickNearEdge(wolf, colliders, bounds);
+    wolf.stuckT = 0;
+  }
 }
 
 function nearestWithin(origin, others, accept, radius) {

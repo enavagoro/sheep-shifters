@@ -50,7 +50,6 @@ class Sfx {
     else this.tone(now, 440, 0.05, 'square', 0.06);
   }
 
-  
   expandSweep(now, open) {
     const notes = open
       ? [320, 400, 500, 640, 800]
@@ -61,14 +60,12 @@ class Sfx {
     });
   }
 
-  
   bark(now) {
     this.slide(now, 720, 380, 0.09, 'square', 0.11);
     this.slide(now + 0.1, 640, 300, 0.08, 'square', 0.09);
     this.tone(now + 0.02, 180, 0.06, 'triangle', 0.04);
   }
 
-  
   sheepWolfAppear(now) {
     this.slide(now, 520, 360, 0.16, 'triangle', 0.07);
     this.slide(now + 0.08, 480, 300, 0.14, 'sine', 0.05);

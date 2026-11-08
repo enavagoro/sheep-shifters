@@ -14,7 +14,7 @@ async function boot() {
         new Promise((resolve) => setTimeout(resolve, 1200)),
       ]);
     } catch {
-      // Fonts are optional — never block boot.
+
     }
   }
 

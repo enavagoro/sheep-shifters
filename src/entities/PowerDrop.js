@@ -2,14 +2,15 @@ import { BOUNDS, TUNING } from '../config.js';
 import { SPRITES, spriteScale } from '../assets/sprites.js';
 
 export class PowerDrop {
-  constructor(scene, x, y, kind = 'blast') {
+  constructor(scene, x, y, kind = 'blast', options = {}) {
     this.scene = scene;
     this.x = x;
     this.y = y;
     this.kind = kind;
     this.radius = 22;
     this.alive = true;
-    this.vy = TUNING.powerFallSpeed;
+    this.grounded = !!options.grounded;
+    this.vy = this.grounded ? 0 : TUNING.powerFallSpeed;
     this.t = Math.random() * Math.PI * 2;
 
     const info = POWER_INFO[kind] || POWER_INFO.blast;
@@ -23,14 +24,14 @@ export class PowerDrop {
 
   update(dt) {
     if (!this.alive) return;
-    this.y += this.vy * dt;
+    if (!this.grounded) this.y += this.vy * dt;
     this.t += dt * 5;
     const pulse = 1 + Math.sin(this.t) * 0.1;
     this.glow.setPosition(this.x, this.y).setScale(pulse);
     this.body.setPosition(this.x, this.y).setScale(spriteScale(SPRITES.bone) * pulse);
     this.glow.setAlpha(0.14 + Math.sin(this.t * 1.4) * 0.08);
 
-    if (this.y > BOUNDS.bottom + 36) this.take();
+    if (!this.grounded && this.y > BOUNDS.bottom + 36) this.take();
   }
 
   take() {
@@ -54,13 +55,13 @@ export const POWER_INFO = {
   magnet: {
     id: 'magnet',
     label: 'MAGNET',
-    hint: 'SPACE',
+    hint: 'SPACE · CORRAL',
     color: 0x3dfff2,
   },
   wide: {
     id: 'wide',
-    label: 'WIDE',
-    hint: 'SPACE',
+    label: 'NOWALLS',
+    hint: 'SPACE · CLEAR',
     color: 0xffe14a,
   },
 };

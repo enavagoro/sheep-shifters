@@ -13,6 +13,8 @@ export function secureSheepInside(sheep, corral) {
     animal.secured = true;
     animal.vx = 0;
     animal.vy = 0;
+    animal.seekCorral = false;
+    animal.raidAnchor = null;
     parkInPen(animal, sheep, corral.inner);
     secured += 1;
   }

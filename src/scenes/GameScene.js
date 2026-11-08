@@ -5,7 +5,7 @@ import { BOUNDS, COLORS, DOGS, GAME_HEIGHT, GAME_WIDTH, TUNING, paceForLevel } f
 import { createArena } from '../entities/Arena.js';
 import { Corral } from '../entities/Corral.js';
 import { Dog } from '../entities/Dog.js';
-import { createFlock, createHerd, Sheep } from '../entities/Sheep.js';
+import { brandSparseOwners, createFlock, createHerd, Sheep } from '../entities/Sheep.js';
 import { spawnWolfFromEdge, spawnWolfFromSide, Wolf } from '../entities/Wolf.js';
 import { SheepWolf, spawnSheepWolfFromEdge } from '../entities/SheepWolf.js';
 import { DogController } from '../systems/DogController.js';
@@ -18,6 +18,9 @@ import { HUD } from '../ui/HUD.js';
 import { Vfx } from '../fx/Vfx.js';
 import { ensureSpriteAnims } from '../assets/sprites.js';
 import { POWER_INFO, PowerDrop, randomPowerKind } from '../entities/PowerDrop.js';
+import { WallHazards } from '../systems/WallHazards.js';
+import { SpikeHazards } from '../systems/SpikeHazards.js';
+import { ejectFromObstacles } from '../systems/collision.js';
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -31,9 +34,12 @@ export class GameScene extends Phaser.Scene {
 
     const arena = createArena(this);
     this.pulseField = arena.field;
-    this.fieldObstacles = arena.obstacles;
+    this.baseObstacles = arena.obstacles;
+    this.fieldObstacles = [...this.baseObstacles];
     this.arenaFrame = arena.frame;
     this.corral = new Corral(this);
+    this.wallHazards = new WallHazards(this);
+    this.spikeHazards = new SpikeHazards(this);
     this.colliders = [...this.fieldObstacles, ...this.corral.fences];
 
     this.dogs = DOGS.map((config) => new Dog(this, config));
@@ -126,7 +132,6 @@ export class GameScene extends Phaser.Scene {
     this.readSwitch();
     this.readPower();
 
-    
     const realDt = Math.min(delta / 1000, 0.05);
     if (!this.state.paused && !this.state.over) {
       this.state.advance(realDt, TUNING.levelSeconds);
@@ -140,7 +145,24 @@ export class GameScene extends Phaser.Scene {
       }
       this.updatePowers(realDt);
       this.updateActiveEffect(realDt);
-      const corralMove = this.corral.update(realDt, this.state.level);
+      const nowallsOn = this.activeEffects.some((fx) => fx.id === 'wide');
+      const hazardLock = this.spawnsLocked || !!this.raid || nowallsOn;
+      const walls = this.wallHazards.update(realDt, {
+        locked: hazardLock,
+        level: this.state.level,
+      });
+      if (walls.changed) {
+        this.syncFieldObstacles();
+        this.ejectUnitsFromWalls();
+      }
+      this.spikeHazards.update(realDt, {
+        level: this.state.level,
+        locked: hazardLock,
+      });
+      this.applySpikeHits();
+      const corralLevel = this.raid ? 0 : this.state.level;
+      const corralMove = this.corral.update(realDt, corralLevel);
+
       if (corralMove.dx || corralMove.dy) {
         this.refreshColliders();
         for (const animal of this.sheep) {
@@ -160,37 +182,48 @@ export class GameScene extends Phaser.Scene {
       while (moveLeft > 0.0001) {
         const step = Math.min(moveLeft, 1 / 90);
         this.dogController.move(direction, step, BOUNDS, this.colliders);
-        
+
         lureKilled.push(...ramSheepWolves(this.sheepWolves, this.dogController.active));
         moveLeft -= step;
       }
-      const magnetFx = this.activeEffects.find((fx) => fx.id === 'magnet');
-      const magnet = magnetFx
-        ? (magnetFx.dog || this.dogController.active)
-        : null;
-      updateFlock(
-        this.sheep,
-        realDt,
-        this.dogs,
-        this.fieldObstacles,
-        this.colliders,
-        BOUNDS,
-        this.corral,
-        this.wolves,
-        this.sheepWolves,
-        magnet,
-      );
-      const raidHit = this.raid && this.raid.phase !== 'done';
-      const result = updateWolves(
-        this.wolves,
-        realDt,
-        this.sheep,
-        this.dogs,
-        this.fieldObstacles,
-        this.colliders,
-        BOUNDS,
-        raidHit ? TUNING.wolfRaidHitRadius : TUNING.wolfHitRadius,
-      );
+      const magnetFx = this.activeEffects.find((fx) => fx.id === 'magnet') || null;
+      const raidWarning = this.raid?.phase === 'warning';
+      if (!raidWarning) {
+        updateFlock(
+          this.sheep,
+          realDt,
+          this.dogs,
+          this.fieldObstacles,
+          this.colliders,
+          BOUNDS,
+          this.corral,
+          this.wolves,
+          this.sheepWolves,
+          magnetFx,
+        );
+      } else {
+        for (const animal of this.sheep) {
+          animal.vx = 0;
+          animal.vy = 0;
+          if (animal.raidAnchor) {
+            animal.x = animal.raidAnchor.x;
+            animal.y = animal.raidAnchor.y;
+          }
+        }
+      }
+      const raidHit = this.raid && this.raid.phase === 'wave';
+      const result = raidWarning
+        ? { killed: [], spots: [] }
+        : updateWolves(
+          this.wolves,
+          realDt,
+          this.sheep,
+          this.dogs,
+          this.fieldObstacles,
+          this.colliders,
+          BOUNDS,
+          raidHit ? TUNING.wolfRaidHitRadius : TUNING.wolfHitRadius,
+        );
       const lureResult = updateSheepWolves(
         this.sheepWolves,
         realDt,
@@ -221,6 +254,10 @@ export class GameScene extends Phaser.Scene {
       this.sheepWolves = this.sheepWolves.filter((lure) => lure.active);
       if (!this.state.over) {
         secureSheepInside(this.sheep, this.corral);
+
+        if (this.raid && this.sheep.some((animal) => animal.raidSheep && animal.secured)) {
+          this.endRaid({ reward: true });
+        }
         this.collectSheep();
       }
 
@@ -260,40 +297,50 @@ export class GameScene extends Phaser.Scene {
 
     if (this.raid.phase === 'warning') {
       this.raid.warningTimer -= dt;
-      if (this.raid.warningTimer <= 0) this.raid.phase = 'wave';
-    }
-
-    if (this.raid.queue.length > 0) {
-      this.raid.spawnTimer -= dt;
-      if (this.raid.spawnTimer <= 0) {
-        this.spawnNextRaidWolf();
-        this.raid.spawnTimer = TUNING.raidSpawnGap;
+      if (this.raid.warningTimer <= 0) {
+        this.raid.phase = 'wave';
+        for (const animal of this.sheep) {
+          if (!animal.raidSheep) continue;
+          animal.raidAnchor = null;
+          animal.seekCorral = true;
+          animal.ignoreDogs = true;
+          animal.wanderSpeed = TUNING.raidSheepSpeed;
+          animal.fleeSpeed = TUNING.raidSheepSpeed;
+        }
       }
+      return;
     }
 
-    const spawning = this.raid.queue.length > 0;
-    const alive = this.wolves.some((wolf) => wolf.active);
-    if (!spawning && !alive) this.endRaid();
+    const escort = this.sheep.find((animal) => (
+      animal.raidSheep && !animal.removed && !animal.lost && !animal.secured
+    ));
+    if (!escort) return;
+
+    const alive = this.wolves.filter((wolf) => wolf.active).length;
+    this.raid.spawnTimer -= dt;
+    if (this.raid.spawnTimer <= 0 && alive < TUNING.raidWolfMax) {
+      this.spawnNextRaidWolf();
+      this.raid.spawnTimer = TUNING.raidSpawnGap;
+    }
   }
 
   beginRaid() {
     this.spawnsLocked = true;
+    this.wallHazards.clear();
+    this.spikeHazards.clear();
+    this.syncFieldObstacles();
 
-    
-    const sides = ['left', 'top', 'bottom'];
-    const perSide = TUNING.raidWolvesPerSide + 1;
-    const queue = [];
-    for (let i = 0; i < perSide; i += 1) {
-      for (const side of sides) {
-        queue.push({ side, slot: (i + 1) / (perSide + 1) });
-      }
-    }
+    this.corral.x = this.corral.homeX;
+    this.corral.y = this.corral.homeY;
+    this.corral.moveT = 0;
+    this.corral.rebuildGeometry();
+    this.corral.syncVisuals?.(false);
+    this.refreshColliders();
 
     this.raid = {
       phase: 'warning',
       warningTimer: TUNING.raidWarningSeconds,
       spawnTimer: 0.35,
-      queue,
     };
 
     for (const wolf of this.wolves) wolf.hide?.();
@@ -317,37 +364,98 @@ export class GameScene extends Phaser.Scene {
       y: midY,
       wanderAngle: 0,
       wanderTurn: 0,
-      wanderSpeed: 36,
-      fleeSpeed: 36,
+      wanderSpeed: TUNING.raidSheepSpeed,
+      fleeSpeed: TUNING.raidSheepSpeed,
     });
     bait.ignoreDogs = true;
-    bait.seekCorral = true;
+    bait.seekCorral = false;
+    bait.raidSheep = true;
+    bait.raidAnchor = { x: midX, y: midY };
     this.sheep.push(bait);
+
+    const radius = TUNING.raidDogRadius;
+    const posts = [
+      { x: midX - radius, y: midY },
+      { x: midX, y: midY - radius },
+      { x: midX, y: midY + radius },
+    ];
+
+    for (let i = 0; i < this.dogs.length; i += 1) {
+      const dog = this.dogs[i];
+      const post = posts[i] || posts[0];
+      dog.x = post.x;
+      dog.y = post.y;
+      dog.moving = false;
+      dog.sync?.(0);
+    }
 
     this.vfx.shake(0.006, 160);
     this.vfx.flashColor(0xff3355, 140);
+    this.sfx.play('sheepwolf');
   }
 
   spawnNextRaidWolf() {
-    const next = this.raid.queue.shift();
-    if (!next) return;
+    if (!this.raid) return;
     const pace = paceForLevel(this.state.level);
-    const point = spawnWolfFromSide(next.side, next.slot);
+    const sides = ['left', 'right', 'top', 'bottom'];
+    let point = null;
+    for (let attempt = 0; attempt < 24 && !point; attempt += 1) {
+      const side = sides[Math.floor(Math.random() * sides.length)];
+      point = this.pickRaidWolfPoint(side, 0.12 + Math.random() * 0.76);
+    }
+    if (!point) return;
     const wolf = new Wolf(this, point);
     wolf.speed = pace.wolfSpeed;
+    wolf.spawnGrace = TUNING.wolfSpawnGrace * 0.45;
     this.wolves.push(wolf);
     this.vfx.shake(0.003, 50);
   }
 
-  endRaid() {
+  pickRaidWolfPoint(side, slot = 0.5) {
+    const point = spawnWolfFromSide(side, slot, { fullRim: true });
+    const escort = this.sheep.find((animal) => (
+      animal.raidSheep && !animal.removed && !animal.lost && !animal.secured
+    ));
+    if (!escort) return point;
+
+    const entryX = Math.min(BOUNDS.right - 40, Math.max(BOUNDS.left + 40, point.x));
+    const entryY = Math.min(BOUNDS.bottom - 40, Math.max(BOUNDS.top + 40, point.y));
+
+    if (Math.hypot(escort.x - entryX, escort.y - entryY) < 160) return null;
+    return point;
+  }
+
+  endRaid({ reward = true } = {}) {
+    if (!this.raid) return;
+
+    for (const wolf of this.wolves) wolf.hide?.();
+    this.wolves = [];
+
     this.raid = null;
     this.spawnsLocked = false;
     this.herdTimer = Math.max(this.herdTimer, 3);
     this.wolfTimer = Math.max(this.wolfTimer, 4);
+
     for (const animal of this.sheep) {
-      if (animal.ignoreDogs) animal.ignoreDogs = false;
-      if (animal.seekCorral) animal.seekCorral = false;
+      animal.raidAnchor = null;
+      animal.raidSheep = false;
+      animal.ignoreDogs = false;
+      animal.seekCorral = false;
     }
+
+    if (!reward) return;
+
+    const inner = this.corral.inner;
+    const dropX = (inner.left + inner.right) * 0.5;
+    const dropY = (inner.top + inner.bottom) * 0.5;
+    const kind = randomPowerKind();
+    const drop = new PowerDrop(this, dropX, dropY, kind, { grounded: true });
+    drop.glow?.setDepth(920);
+    drop.body?.setDepth(921);
+    this.powerDrops.push(drop);
+    this.vfx.ring(dropX, dropY, POWER_INFO[kind].color, 18, 70, 320);
+    this.vfx.burst(dropX, dropY, POWER_INFO[kind].color, 12);
+    this.sfx.play('score');
   }
 
   spawnPowers(dt) {
@@ -376,7 +484,7 @@ export class GameScene extends Phaser.Scene {
       drop.update(dt);
       const dist = Math.hypot(dog.x - drop.x, dog.y - drop.y);
       if (dist > TUNING.powerPickupRadius) continue;
-      // Only the matching dog can claim their bone (Rex/blast, Luna/magnet, Kira/wide).
+
       if (drop.kind !== dog.power) continue;
       const kind = drop.take();
       if (!kind) continue;
@@ -432,17 +540,21 @@ export class GameScene extends Phaser.Scene {
 
   activateMagnet() {
     const dog = this.dogController.active;
+    const gate = this.corral.gateCenter?.() || {
+      x: this.corral.outer.left + 10,
+      y: this.corral.y + (this.corral.gateStartRel + this.corral.gateEndRel) * 0.5,
+    };
     this.clearEffectsById('magnet');
     this.activeEffects.push({
       id: 'magnet',
       dog,
       timer: TUNING.powerMagnetDuration,
       pulse: 0,
-      aura: this.add.circle(dog.x, dog.y, 34, POWER_INFO.magnet.color, 0.16)
-        .setStrokeStyle(2, POWER_INFO.magnet.color, 0.85)
+      aura: this.add.circle(gate.x, gate.y, 42, POWER_INFO.magnet.color, 0.18)
+        .setStrokeStyle(2, POWER_INFO.magnet.color, 0.9)
         .setDepth(8),
     });
-    this.vfx.ring(dog.x, dog.y, POWER_INFO.magnet.color, 20, 90, 320);
+    this.vfx.ring(gate.x, gate.y, POWER_INFO.magnet.color, 24, 120, 360);
     this.vfx.flashColor(POWER_INFO.magnet.color, 90);
     this.sfx.play('switch');
   }
@@ -459,10 +571,18 @@ export class GameScene extends Phaser.Scene {
     });
     this.sfx.play('expand');
     this.vfx.flashColor(POWER_INFO.wide.color, 90);
+
+    this.wallHazards.clear();
+    this.spikeHazards.clear();
+    this.syncFieldObstacles();
+
     if (!alreadyWide) {
       this.corral.pulseEntrance();
       this.animateGateWiden(this.corral.maxGateWiden(), 420, true);
     }
+    const midX = (this.corral.outer.left + this.corral.outer.right) / 2;
+    const midY = (this.corral.outer.top + this.corral.outer.bottom) / 2;
+    this.vfx.ring(midX, midY, POWER_INFO.wide.color, 30, 200, 420);
   }
 
   animateGateWiden(target, duration, opening) {
@@ -483,6 +603,71 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  syncFieldObstacles() {
+    this.fieldObstacles = [...this.baseObstacles, ...this.wallHazards.solidColliders()];
+    this.refreshColliders();
+  }
+
+  ejectUnitsFromWalls() {
+    const solids = this.fieldObstacles;
+    if (!solids.length) return;
+    for (const dog of this.dogs) ejectFromObstacles(dog, solids);
+    for (const animal of this.sheep) {
+      if (animal.removed || animal.lost) continue;
+      ejectFromObstacles(animal, solids);
+    }
+    for (const wolf of this.wolves) {
+      if (wolf.active) ejectFromObstacles(wolf, solids);
+    }
+    for (const lure of this.sheepWolves) {
+      if (lure.active) ejectFromObstacles(lure, solids);
+    }
+  }
+
+  applySpikeHits() {
+    const hits = this.spikeHazards.liveHitboxes();
+    if (!hits.length || this.state.over) return;
+
+    let caught = false;
+    for (const animal of this.sheep) {
+      if (animal.removed || animal.lost || animal.secured) continue;
+      for (const hit of hits) {
+        if (animal.x < hit.left || animal.x > hit.right) continue;
+        if (animal.y < hit.top || animal.y > hit.bottom) continue;
+        animal.lost = true;
+        animal.vx = 0;
+        animal.vy = 0;
+        this.vfx.burst(animal.x, animal.y, COLORS.wolfEdge, 8);
+        caught = true;
+        break;
+      }
+    }
+
+    for (const dog of this.dogs) {
+      for (const hit of hits) {
+        if (dog.x < hit.left || dog.x > hit.right) continue;
+        if (dog.y < hit.top || dog.y > hit.bottom) continue;
+        ejectFromObstacles(dog, [hit]);
+      }
+    }
+    for (const wolf of this.wolves) {
+      if (!wolf.active) continue;
+      for (const hit of hits) {
+        if (wolf.x < hit.left || wolf.x > hit.right) continue;
+        if (wolf.y < hit.top || wolf.y > hit.bottom) continue;
+        ejectFromObstacles(wolf, [hit]);
+      }
+    }
+
+    if (caught) {
+      this.state.endRun();
+      this.vfx.shake(0.01, 220);
+      this.vfx.flashColor(COLORS.wolfEdge, 180);
+      this.sfx.play('hurt');
+      if (this.state.newBest) this.sfx.play('score');
+    }
+  }
+
   refreshColliders() {
     this.colliders = [...this.fieldObstacles, ...this.corral.fences];
   }
@@ -495,11 +680,14 @@ export class GameScene extends Phaser.Scene {
       effect.pulse = (effect.pulse || 0) + dt * 6;
 
       if (effect.id === 'magnet' && effect.aura) {
-        const dog = effect.dog || this.dogController.active;
+        const gate = this.corral.gateCenter?.() || {
+          x: this.corral.outer.left + 10,
+          y: this.corral.y + (this.corral.gateStartRel + this.corral.gateEndRel) * 0.5,
+        };
         const pulse = 1 + Math.sin(effect.pulse) * 0.12;
-        effect.aura.setPosition(dog.x, dog.y);
+        effect.aura.setPosition(gate.x, gate.y);
         effect.aura.setScale(pulse);
-        effect.aura.setAlpha(0.12 + Math.sin(effect.pulse * 1.3) * 0.08);
+        effect.aura.setAlpha(0.14 + Math.sin(effect.pulse * 1.3) * 0.1);
       }
 
       if (effect.id === 'wide' && ((effect.pulse * 10) | 0) !== (effect.drawnPulse | 0)) {
@@ -588,6 +776,7 @@ export class GameScene extends Phaser.Scene {
       if (!point) break;
       const wolf = new Wolf(this, point);
       wolf.speed = pace.wolfSpeed;
+      wolf.spawnGrace = TUNING.wolfSpawnGrace;
       this.wolves.push(wolf);
       spawned += 1;
     }
@@ -600,6 +789,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   spawnSheepWolves(dt) {
+    if (this.state.level < TUNING.sheepWolfStartLevel) {
+      this.sheepWolfTimer = TUNING.sheepWolfFirstDelay;
+      return;
+    }
     const raidLevel = this.state.level > 0 && this.state.level % TUNING.raidEveryLevels === 0;
     if (raidLevel || this.raid) {
       this.sheepWolfTimer = Math.min(this.sheepWolfTimer, TUNING.sheepWolfInterval);
@@ -659,7 +852,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.herdTimer = pace.herdInterval;
-    this.sheep.push(...createHerd(this, origin, pace.herdSize));
+    const herd = createHerd(this, origin, pace.herdSize);
+    brandSparseOwners(herd, this.dogs, this.sheep, this.state.level);
+    this.sheep.push(...herd);
   }
 
   pickHerdOrigin() {
@@ -677,8 +872,8 @@ export class GameScene extends Phaser.Scene {
         const y = zone.top + Math.random() * (zone.bottom - zone.top);
         if (this.corral.covers(x, y)) continue;
         if (nearObstacle(x, y, this.fieldObstacles, 70)) continue;
-        if (nearAny(x, y, this.wolves, (wolf) => wolf.active, TUNING.spawnClearance * 0.7)) continue;
-        if (nearAny(x, y, this.sheep, (animal) => !animal.removed && !animal.lost && !animal.secured, 160)) {
+        if (nearAny(x, y, this.wolves, (wolf) => wolf.active, TUNING.spawnClearance)) continue;
+        if (nearAny(x, y, this.sheep, (animal) => !animal.removed && !animal.lost && !animal.secured, 180)) {
           continue;
         }
         this.lastHerdZone = zoneIndex;
@@ -689,18 +884,55 @@ export class GameScene extends Phaser.Scene {
   }
 
   pickWolfOrigin() {
-    for (let attempt = 0; attempt < 48; attempt += 1) {
-      const point = spawnWolfFromEdge();
-      
-      const entryX = Math.min(BOUNDS.right - 40, Math.max(BOUNDS.left + 40, point.x));
-      const entryY = Math.min(BOUNDS.bottom - 40, Math.max(BOUNDS.top + 40, point.y));
-      if (nearAny(entryX, entryY, this.sheep, (animal) => !animal.removed && !animal.lost && !animal.secured, TUNING.spawnClearance)) {
-        continue;
+    const free = this.sheep.filter((animal) => !animal.removed && !animal.lost && !animal.secured);
+    const flock = flockCentroid(free);
+    const sides = ['left', 'top', 'bottom'].sort((a, b) => sideDistance(b, flock) - sideDistance(a, flock));
+
+    for (const side of sides) {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const slot = 0.18 + Math.random() * 0.64;
+        const point = this.pickFairWolfPoint(side, slot);
+        if (!point) continue;
+        if (nearAny(point.x, point.y, this.wolves, (wolf) => wolf.active, 110)) continue;
+        return point;
       }
-      if (nearAny(point.x, point.y, this.wolves, (wolf) => wolf.active, 90)) continue;
-      return point;
     }
     return null;
+  }
+
+  pickFairWolfPoint(side, slot = 0.5) {
+    const point = spawnWolfFromSide(side, slot);
+    const free = this.sheep.filter((animal) => !animal.removed && !animal.lost && !animal.secured);
+    if (!free.length) return point;
+
+    const entryX = Math.min(BOUNDS.right - 40, Math.max(BOUNDS.left + 40, point.x));
+    const entryY = Math.min(BOUNDS.bottom - 40, Math.max(BOUNDS.top + 40, point.y));
+    const clearance = TUNING.spawnClearance;
+
+    if (nearAny(entryX, entryY, free, () => true, clearance)) return null;
+    if (nearAny(point.x, point.y, free, () => true, clearance)) return null;
+    if (sheepCrowdingEdge(side, free, entryX, entryY, TUNING.wolfEdgeSheepMargin)) return null;
+
+    let nearest = null;
+    let nearestSheep = Infinity;
+    for (const animal of free) {
+      const d = Math.hypot(animal.x - entryX, animal.y - entryY);
+      if (d >= nearestSheep) continue;
+      nearestSheep = d;
+      nearest = animal;
+    }
+    if (nearestSheep < clearance) return null;
+
+    if (nearest) {
+      let nearestDog = Infinity;
+      for (const dog of this.dogs) {
+        const d = Math.hypot(nearest.x - dog.x, nearest.y - dog.y);
+        if (d < nearestDog) nearestDog = d;
+      }
+      if (nearestSheep < nearestDog + TUNING.wolfFairCushion) return null;
+    }
+
+    return point;
   }
 
   collectSheep() {
@@ -827,37 +1059,39 @@ function crossedRaidLevel(fromLevel, toLevel, every) {
 function herdSpawnZones() {
   const midX = (BOUNDS.left + BOUNDS.right) * 0.5;
   const midY = (BOUNDS.top + BOUNDS.bottom) * 0.5;
-  const playRight = Math.min(BOUNDS.right - 120, 980);
+
+  const rim = 150;
+  const playRight = Math.min(BOUNDS.right - 160, 940);
   return [
     {
-      left: BOUNDS.left + 70,
-      right: midX - 40,
-      top: BOUNDS.top + 70,
-      bottom: midY - 30,
-    },
-    {
-      left: BOUNDS.left + 70,
-      right: midX - 40,
-      top: midY + 30,
-      bottom: BOUNDS.bottom - 70,
-    },
-    {
-      left: midX + 20,
-      right: playRight,
-      top: BOUNDS.top + 70,
+      left: BOUNDS.left + rim,
+      right: midX - 50,
+      top: BOUNDS.top + rim,
       bottom: midY - 40,
     },
     {
-      left: midX + 20,
-      right: playRight,
+      left: BOUNDS.left + rim,
+      right: midX - 50,
       top: midY + 40,
-      bottom: BOUNDS.bottom - 70,
+      bottom: BOUNDS.bottom - rim,
     },
     {
-      left: BOUNDS.left + 80,
-      right: midX - 80,
-      top: midY - 90,
-      bottom: midY + 90,
+      left: midX + 30,
+      right: playRight,
+      top: BOUNDS.top + rim,
+      bottom: midY - 50,
+    },
+    {
+      left: midX + 30,
+      right: playRight,
+      top: midY + 50,
+      bottom: BOUNDS.bottom - rim,
+    },
+    {
+      left: BOUNDS.left + rim + 20,
+      right: midX - 60,
+      top: midY - 80,
+      bottom: midY + 80,
     },
   ];
 }
@@ -881,6 +1115,44 @@ function nearAny(x, y, list, accept, radius) {
     const dx = entry.x - x;
     const dy = entry.y - y;
     if (dx * dx + dy * dy < limit) return true;
+  }
+  return false;
+}
+
+function flockCentroid(sheep) {
+  if (!sheep.length) {
+    return {
+      x: (BOUNDS.left + BOUNDS.right) / 2,
+      y: (BOUNDS.top + BOUNDS.bottom) / 2,
+    };
+  }
+  let x = 0;
+  let y = 0;
+  for (const animal of sheep) {
+    x += animal.x;
+    y += animal.y;
+  }
+  return { x: x / sheep.length, y: y / sheep.length };
+}
+
+function sideDistance(side, point) {
+  if (side === 'left') return point.x - BOUNDS.left;
+  if (side === 'top') return point.y - BOUNDS.top;
+  if (side === 'bottom') return BOUNDS.bottom - point.y;
+  return BOUNDS.right - point.x;
+}
+
+function sheepCrowdingEdge(side, sheep, entryX, entryY, margin) {
+  for (const animal of sheep) {
+    if (side === 'left' && animal.x - BOUNDS.left < margin && Math.abs(animal.y - entryY) < margin) {
+      return true;
+    }
+    if (side === 'top' && animal.y - BOUNDS.top < margin && Math.abs(animal.x - entryX) < margin) {
+      return true;
+    }
+    if (side === 'bottom' && BOUNDS.bottom - animal.y < margin && Math.abs(animal.x - entryX) < margin) {
+      return true;
+    }
   }
   return false;
 }

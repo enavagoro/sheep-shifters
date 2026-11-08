@@ -8,12 +8,14 @@ export function updateFlock(sheep, dt, dogs, fieldObstacles, colliders, bounds, 
   }
 
   for (const animal of free) {
+    const magnetizing = magnet && canMagnetPull(animal, magnet);
     steer(animal, dt, free, dogs, wolves, lures, fieldObstacles, bounds, corral, magnet);
 
     animal.x += animal.vx * dt;
     animal.y += animal.vy * dt;
 
     resolveObstacles(animal, colliders);
+    if (magnetizing) slideMagnetThroughGate(animal, corral);
     clampToBounds(animal, bounds);
   }
 }
@@ -24,7 +26,7 @@ function steer(animal, dt, free, dogs, wolves, lures, fieldObstacles, bounds, co
     return;
   }
 
-  if (magnet) {
+  if (magnet && canMagnetPull(animal, magnet)) {
     steerTowardMagnet(animal, dt, magnet, fieldObstacles, bounds, corral);
     return;
   }
@@ -69,6 +71,9 @@ function steer(animal, dt, free, dogs, wolves, lures, fieldObstacles, bounds, co
   let fleeing = false;
   if (!animal.ignoreDogs) {
     for (const dog of dogs) {
+
+      if (animal.ownerNumber && animal.ownerNumber !== dog.number) continue;
+
       const fx = animal.x - dog.x;
       const fy = animal.y - dog.y;
       const dist = Math.hypot(fx, fy);
@@ -96,7 +101,6 @@ function steer(animal, dt, free, dogs, wolves, lures, fieldObstacles, bounds, co
     dy += (fy / Math.max(dist, 10)) * weight;
   }
 
-  
   let lured = false;
   for (const lure of lures) {
     if (!lure.active || !lure.calling) continue;
@@ -135,59 +139,105 @@ function steer(animal, dt, free, dogs, wolves, lures, fieldObstacles, bounds, co
 }
 
 function steerTowardMagnet(animal, dt, magnet, fieldObstacles, bounds, corral) {
-  let dx = magnet.x - animal.x;
-  let dy = magnet.y - animal.y;
+
+  const gate = corral.gateCenter?.() || magnet || {
+    x: corral.outer.left + 10,
+    y: corral.y + (corral.gateStartRel + corral.gateEndRel) * 0.5,
+  };
+  const targetX = corral.inner.left + 52;
+  const targetY = gate.y;
+  let dx = targetX - animal.x;
+  let dy = targetY - animal.y;
+
+  if (animal.x > corral.outer.left - 220) {
+    dy *= 2.4;
+  }
+
   const dist = Math.hypot(dx, dy) || 1;
   dx /= dist;
   dy /= dist;
 
   const avoid = obstacleRepulsion(animal, fieldObstacles, TUNING.boundsMargin);
-  dx += avoid.x * 1.1;
-  dy += avoid.y * 1.1;
+  dx += avoid.x * 0.7;
+  dy += avoid.y * 0.7;
   if (!corral.covers(animal.x, animal.y)) {
     const edge = boundsRepulsion(animal, bounds, TUNING.boundsMargin);
-    dx += edge.x * 1.2;
-    dy += edge.y * 1.2;
+    dx += edge.x * 1.0;
+    dy += edge.y * 1.0;
   }
 
   const magnitude = Math.hypot(dx, dy) || 1;
   const pull = dist > TUNING.powerMagnetRadius
-    ? animal.wanderSpeed * 1.15
-    : animal.fleeSpeed * 0.92;
+    ? animal.wanderSpeed * 1.35
+    : animal.fleeSpeed * 1.05;
   const blend = 1 - Math.exp(-9 * dt);
   animal.vx += ((dx / magnitude) * pull - animal.vx) * blend;
   animal.vy += ((dy / magnitude) * pull - animal.vy) * blend;
 }
 
+function slideMagnetThroughGate(animal, corral) {
+  const half = animal.size / 2;
+  const gateTop = corral.y + corral.gateStartRel;
+  const gateBot = corral.y + corral.gateEndRel;
+  const gateMid = (gateTop + gateBot) * 0.5;
+  const gateLeft = corral.outer.left;
+
+  if (animal.x > gateLeft - 180 && animal.x < corral.inner.left + 90) {
+    animal.y += (gateMid - animal.y) * 0.35;
+  }
+
+  const inLane = animal.y >= gateTop + half + 1 && animal.y <= gateBot - half - 1;
+  const atDoor = animal.x >= gateLeft - 36 && animal.x <= corral.inner.left + 70;
+  if (!atDoor) return;
+
+  if (!inLane) {
+    animal.y = clamp(animal.y, gateTop + half + 2, gateBot - half - 2);
+  }
+  if (animal.x < corral.inner.left + 36) {
+    animal.x += 8;
+    animal.vx = Math.max(animal.vx, 200);
+    animal.vy *= 0.4;
+  }
+}
+
 function steerTowardCorral(animal, dt, corral, fieldObstacles, bounds) {
-  const gateX = corral.outer.left + 10;
-  const gateY = corral.y + (corral.gateStartRel + corral.gateEndRel) * 0.5;
-  let dx = gateX - animal.x;
-  let dy = gateY - animal.y;
+  const gate = corral.gateCenter?.() || {
+    x: corral.outer.left + 10,
+    y: corral.y + (corral.gateStartRel + corral.gateEndRel) * 0.5,
+  };
+
+  const targetX = animal.raidSheep ? gate.x + 36 : gate.x;
+  const targetY = gate.y;
+  let dx = targetX - animal.x;
+  let dy = targetY - animal.y;
   const dist = Math.hypot(dx, dy) || 1;
   dx /= dist;
   dy /= dist;
 
-  
-  animal.wanderTurn = (animal.wanderTurn || 0) + (Math.random() - 0.5) * 1.2 * dt;
-  animal.wanderTurn = clamp(animal.wanderTurn, -0.4, 0.4);
-  dx += Math.cos(animal.wanderAngle || 0) * 0.08;
-  dy += Math.sin(animal.wanderAngle || 0) * 0.08 + animal.wanderTurn * 0.15;
+  animal.wanderTurn = (animal.wanderTurn || 0) + (Math.random() - 0.5) * 0.6 * dt;
+  animal.wanderTurn = clamp(animal.wanderTurn, -0.2, 0.2);
+  dx += Math.cos(animal.wanderAngle || 0) * 0.03;
+  dy += Math.sin(animal.wanderAngle || 0) * 0.03 + animal.wanderTurn * 0.08;
 
   const avoid = obstacleRepulsion(animal, fieldObstacles, TUNING.boundsMargin);
-  dx += avoid.x * 1.2;
-  dy += avoid.y * 1.2;
+  dx += avoid.x * 0.9;
+  dy += avoid.y * 0.9;
   if (!corral.covers(animal.x, animal.y)) {
     const edge = boundsRepulsion(animal, bounds, TUNING.boundsMargin);
-    dx += edge.x * 1.4;
-    dy += edge.y * 1.4;
+    dx += edge.x * 1.1;
+    dy += edge.y * 1.1;
   }
 
   const magnitude = Math.hypot(dx, dy) || 1;
   const speed = animal.wanderSpeed;
-  const blend = 1 - Math.exp(-2.4 * dt);
+  const blend = 1 - Math.exp(-(animal.raidSheep ? 3.6 : 2.4) * dt);
   animal.vx += ((dx / magnitude) * speed - animal.vx) * blend;
   animal.vy += ((dy / magnitude) * speed - animal.vy) * blend;
+}
+
+function canMagnetPull(animal, _magnet) {
+
+  return Boolean(animal) && !animal.ignoreDogs;
 }
 
 function clamp(value, min, max) {

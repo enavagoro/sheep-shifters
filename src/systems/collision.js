@@ -27,7 +27,7 @@ export function clampToBounds(entity, bounds) {
 export function resolveObstacles(entity, obstacles) {
   const half = entity.size / 2;
 
-  for (let pass = 0; pass < 3; pass += 1) {
+  for (let pass = 0; pass < 4; pass += 1) {
     for (const obs of obstacles) {
       const overlapX = Math.min(entity.x + half, obs.right) - Math.max(entity.x - half, obs.left);
       const overlapY = Math.min(entity.y + half, obs.bottom) - Math.max(entity.y - half, obs.top);
@@ -36,16 +36,29 @@ export function resolveObstacles(entity, obstacles) {
       const centerX = (obs.left + obs.right) / 2;
       const centerY = (obs.top + obs.bottom) / 2;
 
-      if (overlapX < overlapY) {
+      if (overlapX < overlapY - 0.5) {
         const dir = entity.x < centerX ? -1 : 1;
-        entity.x += dir * overlapX;
+        entity.x += dir * (overlapX + 0.5);
         if (dir < 0 && entity.vx > 0) entity.vx = 0;
         if (dir > 0 && entity.vx < 0) entity.vx = 0;
-      } else {
+      } else if (overlapY < overlapX - 0.5) {
         const dir = entity.y < centerY ? -1 : 1;
-        entity.y += dir * overlapY;
+        entity.y += dir * (overlapY + 0.5);
         if (dir < 0 && entity.vy > 0) entity.vy = 0;
         if (dir > 0 && entity.vy < 0) entity.vy = 0;
+      } else {
+
+        const leftPen = (entity.x + half) - obs.left;
+        const rightPen = obs.right - (entity.x - half);
+        const topPen = (entity.y + half) - obs.top;
+        const botPen = obs.bottom - (entity.y - half);
+        const minPen = Math.min(leftPen, rightPen, topPen, botPen);
+        if (minPen === leftPen) entity.x = obs.left - half - 0.5;
+        else if (minPen === rightPen) entity.x = obs.right + half + 0.5;
+        else if (minPen === topPen) entity.y = obs.top - half - 0.5;
+        else entity.y = obs.bottom + half + 0.5;
+        entity.vx = 0;
+        entity.vy = 0;
       }
     }
   }
@@ -62,7 +75,14 @@ export function obstacleRepulsion(entity, obstacles, margin) {
     let dy = entity.y - nearestY;
     let dist = Math.hypot(dx, dy);
 
-    if (dist < 0.001) continue;
+    if (dist < 0.001) {
+      dx = entity.x - (obs.left + obs.right) * 0.5;
+      dy = entity.y - (obs.top + obs.bottom) * 0.5;
+      dist = Math.hypot(dx, dy) || 1;
+      x += (dx / dist) * 2.4;
+      y += (dy / dist) * 2.4;
+      continue;
+    }
     if (dist >= margin) continue;
 
     const strength = (margin - dist) / margin;
@@ -71,6 +91,58 @@ export function obstacleRepulsion(entity, obstacles, margin) {
   }
 
   return { x, y };
+}
+
+export function ejectFromObstacles(entity, obstacles) {
+  resolveObstacles(entity, obstacles);
+  resolveObstacles(entity, obstacles);
+}
+
+function overlapsObstacle(entity, obs) {
+  const half = entity.size / 2;
+  return entity.x + half > obs.left
+    && entity.x - half < obs.right
+    && entity.y + half > obs.top
+    && entity.y - half < obs.bottom;
+}
+
+export function unstickNearEdge(entity, obstacles, bounds) {
+  if (!obstacles?.length) {
+    clampToBounds(entity, bounds);
+    return;
+  }
+
+  const half = entity.size / 2;
+  const rim = half + 52;
+  const nearRim = entity.x < bounds.left + rim
+    || entity.x > bounds.right - rim
+    || entity.y < bounds.top + rim
+    || entity.y > bounds.bottom - rim;
+
+  resolveObstacles(entity, obstacles);
+  clampToBounds(entity, bounds);
+
+  if (!nearRim) return;
+
+  const cx = (bounds.left + bounds.right) * 0.5;
+  const cy = (bounds.top + bounds.bottom) * 0.5;
+  for (let i = 0; i < 8; i += 1) {
+    let stuck = false;
+    for (const obs of obstacles) {
+      if (!overlapsObstacle(entity, obs)) continue;
+      stuck = true;
+      break;
+    }
+    if (!stuck) break;
+
+    const dx = cx - entity.x;
+    const dy = cy - entity.y;
+    const len = Math.hypot(dx, dy) || 1;
+    entity.x += (dx / len) * 10;
+    entity.y += (dy / len) * 10;
+    resolveObstacles(entity, obstacles);
+    clampToBounds(entity, bounds);
+  }
 }
 
 export function boundsRepulsion(entity, bounds, margin) {
