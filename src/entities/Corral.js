@@ -1,4 +1,5 @@
 import { BOUNDS, COLORS, CORRAL, TUNING } from '../config.js';
+import { toCss } from '../fx/color.js';
 
 export function createCorralGeometry(spec = CORRAL) {
   const right = spec.x + spec.w;
@@ -165,29 +166,42 @@ export class Corral {
 
     this.drawnPulse = null;
     this.drawnWiden = null;
+    this.themeAccent = COLORS.corralNeon;
+    this.themeFloor = COLORS.corralFloor;
     this.redraw(0);
+  }
+
+  applyTheme(theme) {
+    if (!theme) return;
+    this.themeAccent = theme.accent ?? this.themeAccent;
+    this.themeFloor = theme.dark ?? this.themeFloor;
+    this.floor.setFillStyle(this.themeFloor, 0.4);
+    this.label.setColor(toCss(this.themeAccent));
+    const pulse = this.gatePulse || (this.gateWiden > 0 ? 0.45 : 0);
+    this.redraw(pulse);
   }
 
   redraw(pulse = 0) {
     const glowA = 0.18 + pulse * 0.35;
     const lineA = 0.85 + pulse * 0.15;
     const inset = 1;
+    const neon = this.themeAccent ?? COLORS.corralNeon;
 
     this.drawnPulse = Math.round(pulse * 20) / 20;
     this.drawnWiden = this.gateWiden;
 
     this.glow.clear();
-    this.glow.lineStyle(6, COLORS.corralNeon, glowA);
+    this.glow.lineStyle(6, neon, glowA);
     this.strokeCorral(this.glow, inset);
 
     this.neon.clear();
-    this.neon.lineStyle(2, COLORS.corralNeon, lineA);
+    this.neon.lineStyle(2, neon, lineA);
     this.strokeCorral(this.neon, 0);
 
     if (!this.isLeftOpen()) {
       const gateTop = this.gateStartRel;
       const gateBot = this.gateEndRel;
-      this.neon.lineStyle(2, COLORS.corralNeon, 0.35 + pulse * 0.5);
+      this.neon.lineStyle(2, neon, 0.35 + pulse * 0.5);
       this.neon.lineBetween(4, gateTop, 4, gateBot);
       this.neon.lineBetween(10, gateTop, 10, gateBot);
     }

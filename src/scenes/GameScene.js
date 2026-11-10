@@ -18,10 +18,10 @@ import { HUD } from '../ui/HUD.js';
 import { Vfx } from '../fx/Vfx.js';
 import { ensureSpriteAnims } from '../assets/sprites.js';
 import { POWER_INFO, PowerDrop, randomPowerKind } from '../entities/PowerDrop.js';
-import { WallHazards } from '../systems/WallHazards.js';
 import { SpikeHazards } from '../systems/SpikeHazards.js';
-import { ejectFromObstacles } from '../systems/collision.js';
-
+import { WallHazards } from '../systems/WallHazards.js';
+import { ejectFromObstacles, ejectFromSpike } from '../systems/collision.js';
+import { loadSettings } from '../systems/Settings.js';
 export class GameScene extends Phaser.Scene {
   constructor() {
     super('GameScene');
@@ -38,8 +38,8 @@ export class GameScene extends Phaser.Scene {
     this.fieldObstacles = [...this.baseObstacles];
     this.arenaFrame = arena.frame;
     this.corral = new Corral(this);
-    this.wallHazards = new WallHazards(this);
     this.spikeHazards = new SpikeHazards(this);
+    this.wallHazards = new WallHazards(this);
     this.colliders = [...this.fieldObstacles, ...this.corral.fences];
 
     this.dogs = DOGS.map((config) => new Dog(this, config));
@@ -62,6 +62,10 @@ export class GameScene extends Phaser.Scene {
     this.hud = new HUD(this);
     this.music = getMusic();
     this.sfx = getSfx();
+    const settings = loadSettings();
+    this.music.setMode('game');
+    this.music.setMusicMuted(!settings.music);
+    this.sfx.setMuted(!settings.sound);
 
     this.beatFlash = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x39ff6a, 0.06)
       .setDepth(4)
@@ -80,6 +84,7 @@ export class GameScene extends Phaser.Scene {
       ESC: Phaser.Input.Keyboard.KeyCodes.ESC,
       ENTER: Phaser.Input.Keyboard.KeyCodes.ENTER,
       SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE,
+      Z: Phaser.Input.Keyboard.KeyCodes.Z,
       R: Phaser.Input.Keyboard.KeyCodes.R,
     });
 
@@ -147,18 +152,19 @@ export class GameScene extends Phaser.Scene {
       this.updateActiveEffect(realDt);
       const nowallsOn = this.activeEffects.some((fx) => fx.id === 'wide');
       const hazardLock = this.spawnsLocked || !!this.raid || nowallsOn;
-      const walls = this.wallHazards.update(realDt, {
-        locked: hazardLock,
-        level: this.state.level,
-      });
-      if (walls.changed) {
-        this.syncFieldObstacles();
-        this.ejectUnitsFromWalls();
-      }
       this.spikeHazards.update(realDt, {
         level: this.state.level,
         locked: hazardLock,
       });
+      const walls = this.wallHazards.update(realDt, {
+        level: this.state.level,
+        locked: hazardLock,
+        paused: false,
+      });
+      if (walls.changed) {
+        this.syncFieldObstacles();
+        if (this.wallHazards.phase === 'live') this.ejectUnitsFromWalls();
+      }
       this.applySpikeHits();
       const corralLevel = this.raid ? 0 : this.state.level;
       const corralMove = this.corral.update(realDt, corralLevel);
@@ -244,11 +250,12 @@ export class GameScene extends Phaser.Scene {
         this.sfx.play('kill');
       }
       if (result.caught || lureResult.caught) {
-        this.state.endRun();
+        this.state.endRun('wolf');
+        this.music.setMode('menu');
         this.vfx.shake(0.01, 220);
         this.vfx.flashColor(0xff3355, 180);
         this.sfx.play('hurt');
-        if (this.state.newBest) this.sfx.play('score');
+        if (this.state.newBest || this.state.newBestTime) this.sfx.play('score');
       }
       this.wolves = this.wolves.filter((wolf) => wolf.active);
       this.sheepWolves = this.sheepWolves.filter((lure) => lure.active);
@@ -265,10 +272,13 @@ export class GameScene extends Phaser.Scene {
       if (active.moving) this.vfx.trail(active.x, active.y, active.color, realDt);
     }
 
-    this.music.tick(this.state.paused || this.state.over);
+    this.music.tick(this.state.paused);
     const energy = this.music.energy();
     this.beatFlash.setAlpha(energy * 0.08);
-    if (!this.state.paused) this.pulseField.update(realDt, energy, this.state.elapsed);
+    if (!this.state.paused) {
+      this.pulseField.update(realDt, energy, this.state.elapsed);
+      this.corral.applyTheme?.(this.pulseField.theme);
+    }
 
     for (const dog of this.dogs) dog.sync(realDt);
     for (const animal of this.sheep) animal.sync(realDt);
@@ -326,8 +336,8 @@ export class GameScene extends Phaser.Scene {
 
   beginRaid() {
     this.spawnsLocked = true;
-    this.wallHazards.clear();
     this.spikeHazards.clear();
+    this.wallHazards.clear();
     this.syncFieldObstacles();
 
     this.corral.x = this.corral.homeX;
@@ -413,16 +423,29 @@ export class GameScene extends Phaser.Scene {
 
   pickRaidWolfPoint(side, slot = 0.5) {
     const point = spawnWolfFromSide(side, slot, { fullRim: true });
+    const entryX = Math.min(BOUNDS.right - 40, Math.max(BOUNDS.left + 40, point.x));
+    const entryY = Math.min(BOUNDS.bottom - 40, Math.max(BOUNDS.top + 40, point.y));
+    if (this.entryBlockedBySpikes(entryX, entryY, side)) return null;
+
     const escort = this.sheep.find((animal) => (
       animal.raidSheep && !animal.removed && !animal.lost && !animal.secured
     ));
     if (!escort) return point;
-
-    const entryX = Math.min(BOUNDS.right - 40, Math.max(BOUNDS.left + 40, point.x));
-    const entryY = Math.min(BOUNDS.bottom - 40, Math.max(BOUNDS.top + 40, point.y));
-
     if (Math.hypot(escort.x - entryX, escort.y - entryY) < 160) return null;
     return point;
+  }
+
+  entryBlockedBySpikes(x, y, side = null) {
+    const hits = this.spikeHazards?.liveHitboxes?.() || [];
+    if (!hits.length) return false;
+    const margin = 36;
+    for (const hit of hits) {
+      if (side && hit.edge && hit.edge !== side) continue;
+      if (x < hit.left - margin || x > hit.right + margin) continue;
+      if (y < hit.top - margin || y > hit.bottom + margin) continue;
+      return true;
+    }
+    return false;
   }
 
   endRaid({ reward = true } = {}) {
@@ -550,11 +573,11 @@ export class GameScene extends Phaser.Scene {
       dog,
       timer: TUNING.powerMagnetDuration,
       pulse: 0,
-      aura: this.add.circle(gate.x, gate.y, 42, POWER_INFO.magnet.color, 0.18)
-        .setStrokeStyle(2, POWER_INFO.magnet.color, 0.9)
+      aura: this.add.circle(gate.x, gate.y, Math.min(90, TUNING.powerMagnetRadius * 0.12), POWER_INFO.magnet.color, 0.16)
+        .setStrokeStyle(2, POWER_INFO.magnet.color, 0.85)
         .setDepth(8),
     });
-    this.vfx.ring(gate.x, gate.y, POWER_INFO.magnet.color, 24, 120, 360);
+    this.vfx.ring(gate.x, gate.y, POWER_INFO.magnet.color, 28, 140, 420);
     this.vfx.flashColor(POWER_INFO.magnet.color, 90);
     this.sfx.play('switch');
   }
@@ -572,8 +595,8 @@ export class GameScene extends Phaser.Scene {
     this.sfx.play('expand');
     this.vfx.flashColor(POWER_INFO.wide.color, 90);
 
-    this.wallHazards.clear();
     this.spikeHazards.clear();
+    this.wallHazards.clear();
     this.syncFieldObstacles();
 
     if (!alreadyWide) {
@@ -604,7 +627,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   syncFieldObstacles() {
-    this.fieldObstacles = [...this.baseObstacles, ...this.wallHazards.solidColliders()];
+    this.fieldObstacles = [
+      ...this.baseObstacles,
+      ...this.wallHazards.solidColliders(),
+    ];
     this.refreshColliders();
   }
 
@@ -647,7 +673,7 @@ export class GameScene extends Phaser.Scene {
       for (const hit of hits) {
         if (dog.x < hit.left || dog.x > hit.right) continue;
         if (dog.y < hit.top || dog.y > hit.bottom) continue;
-        ejectFromObstacles(dog, [hit]);
+        ejectFromSpike(dog, hit);
       }
     }
     for (const wolf of this.wolves) {
@@ -655,16 +681,17 @@ export class GameScene extends Phaser.Scene {
       for (const hit of hits) {
         if (wolf.x < hit.left || wolf.x > hit.right) continue;
         if (wolf.y < hit.top || wolf.y > hit.bottom) continue;
-        ejectFromObstacles(wolf, [hit]);
+        ejectFromSpike(wolf, hit);
       }
     }
 
     if (caught) {
-      this.state.endRun();
+      this.state.endRun('spike');
+      this.music.setMode('menu');
       this.vfx.shake(0.01, 220);
       this.vfx.flashColor(COLORS.wolfEdge, 180);
       this.sfx.play('hurt');
-      if (this.state.newBest) this.sfx.play('score');
+      if (this.state.newBest || this.state.newBestTime) this.sfx.play('score');
     }
   }
 
@@ -903,10 +930,12 @@ export class GameScene extends Phaser.Scene {
   pickFairWolfPoint(side, slot = 0.5) {
     const point = spawnWolfFromSide(side, slot);
     const free = this.sheep.filter((animal) => !animal.removed && !animal.lost && !animal.secured);
-    if (!free.length) return point;
 
     const entryX = Math.min(BOUNDS.right - 40, Math.max(BOUNDS.left + 40, point.x));
     const entryY = Math.min(BOUNDS.bottom - 40, Math.max(BOUNDS.top + 40, point.y));
+    if (this.entryBlockedBySpikes(entryX, entryY, side)) return null;
+    if (!free.length) return point;
+
     const clearance = TUNING.spawnClearance;
 
     if (nearAny(entryX, entryY, free, () => true, clearance)) return null;
@@ -980,6 +1009,11 @@ export class GameScene extends Phaser.Scene {
 
   readPause() {
     const escDown = this.keys.ESC.isDown;
+    if (escDown && !this.escHeld && this.state.over) {
+      this.scene.start('MenuScene');
+      this.escHeld = escDown;
+      return;
+    }
     if (escDown && !this.escHeld && !this.state.over) {
       this.state.paused = !this.state.paused;
       if (this.state.paused) this.hud.menuIndex = 0;
@@ -988,11 +1022,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   readPower() {
-    const spaceDown = this.keys.SPACE.isDown;
-    if (spaceDown && !this.spaceHeld && !this.state.paused && !this.state.over) {
+    const powerDown = this.keys.SPACE.isDown || this.keys.Z.isDown;
+    if (powerDown && !this.spaceHeld && !this.state.paused && !this.state.over) {
       this.activatePower();
     }
-    this.spaceHeld = spaceDown;
+    this.spaceHeld = powerDown;
   }
 
   readPauseMenu() {
@@ -1012,11 +1046,11 @@ export class GameScene extends Phaser.Scene {
       || this.keys.D.isDown;
 
     if (upDown && !this.upHeld) {
-      this.hud.menuIndex = (this.hud.menuIndex + 2) % 3;
+      this.hud.menuIndex = (this.hud.menuIndex + 3) % 4;
       this.sfx.play('ui');
     }
     if (downDown && !this.downHeld) {
-      this.hud.menuIndex = (this.hud.menuIndex + 1) % 3;
+      this.hud.menuIndex = (this.hud.menuIndex + 1) % 4;
       this.sfx.play('ui');
     }
     if (enterDown && !this.enterHeld) {
@@ -1026,8 +1060,11 @@ export class GameScene extends Phaser.Scene {
       } else if (this.hud.menuIndex === 1) {
         this.sfx.toggleMuted();
         this.sfx.play('ui');
-      } else {
+      } else if (this.hud.menuIndex === 2) {
         this.scene.restart();
+        return;
+      } else {
+        this.scene.start('MenuScene');
         return;
       }
     }
@@ -1038,8 +1075,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   readRestart() {
-    const restartDown = this.keys.R.isDown
-      || (this.state.over && this.keys.ENTER.isDown);
+    const restartDown = this.keys.R.isDown;
     if (restartDown && !this.restartHeld) {
       this.scene.restart();
       return true;

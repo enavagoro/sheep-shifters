@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config.js';
 import { ensureSpriteAnims, preloadSprites } from '../assets/sprites.js';
-
 export class BootScene extends Phaser.Scene {
   constructor() {
     super('BootScene');
@@ -10,6 +9,7 @@ export class BootScene extends Phaser.Scene {
   preload() {
     this.cameras.main.setBackgroundColor('#050706');
     preloadSprites(this);
+    this.load.image('logo', 'assets/logo.png');
 
     this.loading = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 28, 'LOADING', {
       fontFamily: '"Press Start 2P", "Courier New", monospace',
@@ -53,7 +53,7 @@ export class BootScene extends Phaser.Scene {
 
     const waited = this.time.now - this.openedAt >= 450;
     if (waited && this.warmFrames >= this.minFrames) {
-      this.scene.start('GameScene');
+      this.scene.start('MenuScene');
     }
   }
 }

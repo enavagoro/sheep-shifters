@@ -95,7 +95,26 @@ export function obstacleRepulsion(entity, obstacles, margin) {
 
 export function ejectFromObstacles(entity, obstacles) {
   resolveObstacles(entity, obstacles);
-  resolveObstacles(entity, obstacles);
+}
+
+export function ejectFromSpike(entity, hit) {
+  const half = (entity.size || 20) / 2;
+  const pad = 10;
+  if (hit.edge === 'left') {
+    entity.x = Math.max(entity.x, hit.right + half + pad);
+    entity.vx = Math.max(entity.vx || 0, 160);
+  } else if (hit.edge === 'right') {
+    entity.x = Math.min(entity.x, hit.left - half - pad);
+    entity.vx = Math.min(entity.vx || 0, -160);
+  } else if (hit.edge === 'top') {
+    entity.y = Math.max(entity.y, hit.bottom + half + pad);
+    entity.vy = Math.max(entity.vy || 0, 160);
+  } else if (hit.edge === 'bottom') {
+    entity.y = Math.min(entity.y, hit.top - half - pad);
+    entity.vy = Math.min(entity.vy || 0, -160);
+  } else {
+    resolveObstacles(entity, [hit]);
+  }
 }
 
 function overlapsObstacle(entity, obs) {

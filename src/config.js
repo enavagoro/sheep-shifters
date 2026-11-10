@@ -1,5 +1,5 @@
 export const GAME_WIDTH = 1280;
-export const UI_BAR = 56;
+export const UI_BAR = 64;
 export const UI_BOTTOM = 64;
 export const GAME_HEIGHT = 720 + UI_BAR + UI_BOTTOM;
 
@@ -72,8 +72,8 @@ export const TUNING = {
   powerPickupRadius: 30,
   powerBlastRadius: 200,
   powerFallSpeed: 380,
-  powerMagnetDuration: 3,
-  powerMagnetRadius: 420,
+  powerMagnetDuration: 5.5,
+  powerMagnetRadius: 9999,
   powerWideDuration: 7,
 
   sheepWolfStartLevel: 2,
@@ -106,7 +106,7 @@ export const TUNING = {
   spikeInterval: 11,
   spikeWarn: 1.05,
   spikeDuration: 7,
-  spikeDepth: 30,
+  spikeDepth: 32,
 };
 
 export function paceForLevel(level) {
@@ -126,7 +126,8 @@ export const BOUNDS = {
   left: 18,
   top: UI_BAR + 10,
   right: 1262,
-  bottom: UI_BAR + 668,
+  // Deja hueco para el panel de poder del HUD inferior
+  bottom: GAME_HEIGHT - UI_BOTTOM - 56,
 };
 
 export const SHEEP_COUNT = 12;

@@ -1,10 +1,10 @@
 
 export const SPRITES = {
   dog: { key: 'dog', path: 'assets/dog.png', frameWidth: 256, frameHeight: 147, displayHeight: 40 },
-  sheep: { key: 'sheep', path: 'assets/sheep.png', frameWidth: 256, frameHeight: 135, displayHeight: 30 },
-  wolf: { key: 'wolf', path: 'assets/wolf.png', frameWidth: 256, frameHeight: 152, displayHeight: 36 },
-  sheepwolf: { key: 'sheepwolf', path: 'assets/sheepwolf.png', frameWidth: 256, frameHeight: 152, displayHeight: 34 },
-  bone: { key: 'bone', path: 'assets/bone.png', frameWidth: 574, frameHeight: 341, displayHeight: 28 },
+  sheep: { key: 'sheep', path: 'assets/sheep-pixel.png', frameWidth: 256, frameHeight: 164, displayHeight: 32 },
+  wolf: { key: 'wolf', path: 'assets/wolf-pixel.png', frameWidth: 256, frameHeight: 152, displayHeight: 40 },
+  sheepwolf: { key: 'sheepwolf', path: 'assets/sheepwolf-pixel.png', frameWidth: 256, frameHeight: 146, displayHeight: 30 },
+  bone: { key: 'bone', path: 'assets/bone.png', frameWidth: 140, frameHeight: 82, displayHeight: 34 },
 };
 
 export function preloadSprites(scene) {
@@ -18,6 +18,7 @@ export function preloadSprites(scene) {
       frameHeight: sheet.frameHeight,
     });
   }
+  scene.load.image('dog-face', 'assets/dog-face.png');
 }
 
 export function ensureSpriteAnims(scene) {

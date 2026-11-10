@@ -109,10 +109,31 @@ export class SpikeHazards {
   }
 }
 
+const SPIKE_STEP = 16;
+const SPIKE_INSET = 2; // deja el filo neon del marco libre
+
+function snap(value, step = SPIKE_STEP) {
+  return Math.round(value / step) * step;
+}
+
+function snapSeg(start, length, min, max) {
+  let s = snap(Math.max(min, start));
+  let len = Math.max(SPIKE_STEP * 2, snap(length));
+  if (s + len > max) {
+    s = snap(max - len);
+    if (s < min) {
+      s = snap(min);
+      len = Math.max(SPIKE_STEP * 2, snap(max - s));
+    }
+  }
+  if (s + len > max) len = Math.max(SPIKE_STEP, snap(max - s));
+  return { start: s, length: len };
+}
+
 function pickEdgeSpikeLayout() {
-  const depth = TUNING.spikeDepth;
-  const pad = 50;
-  const gatePad = 28;
+  const depth = snap(TUNING.spikeDepth);
+  const pad = snap(48);
+  const gatePad = 32;
   const edges = shuffle(['left', 'right', 'top', 'bottom']);
 
   const count = Math.random() < 0.45 ? 1 : 2;
@@ -124,43 +145,45 @@ function pickEdgeSpikeLayout() {
       const top = BOUNDS.top + pad;
       const bot = BOUNDS.bottom - pad;
       const len = bot - top;
-      const seg = len * (0.35 + Math.random() * 0.35);
-      const start = top + Math.random() * Math.max(8, len - seg);
+      const rawSeg = len * (0.35 + Math.random() * 0.35);
+      const rawStart = top + Math.random() * Math.max(SPIKE_STEP, len - rawSeg);
+      const { start, length } = snapSeg(rawStart, rawSeg, top, bot);
       specs.push({
         edge,
-        x: BOUNDS.left,
+        x: BOUNDS.left + SPIKE_INSET,
         y: start,
         w: depth,
-        h: seg,
+        h: length,
       });
     } else if (edge === 'right') {
-
       const top = BOUNDS.top + pad;
       const bot = Math.min(BOUNDS.bottom - pad, CORRAL.y - gatePad);
       if (bot - top > 80) {
         const len = bot - top;
-        const seg = len * (0.3 + Math.random() * 0.4);
-        const start = top + Math.random() * Math.max(8, len - seg);
+        const rawSeg = len * (0.3 + Math.random() * 0.4);
+        const rawStart = top + Math.random() * Math.max(SPIKE_STEP, len - rawSeg);
+        const { start, length } = snapSeg(rawStart, rawSeg, top, bot);
         specs.push({
           edge,
-          x: BOUNDS.right - depth,
+          x: BOUNDS.right - depth - SPIKE_INSET,
           y: start,
           w: depth,
-          h: seg,
+          h: length,
         });
       }
       const top2 = Math.max(BOUNDS.top + pad, CORRAL.y + CORRAL.h + gatePad);
       const bot2 = BOUNDS.bottom - pad;
       if (bot2 - top2 > 80) {
         const len = bot2 - top2;
-        const seg = len * (0.3 + Math.random() * 0.4);
-        const start = top2 + Math.random() * Math.max(8, len - seg);
+        const rawSeg = len * (0.3 + Math.random() * 0.4);
+        const rawStart = top2 + Math.random() * Math.max(SPIKE_STEP, len - rawSeg);
+        const { start, length } = snapSeg(rawStart, rawSeg, top2, bot2);
         specs.push({
           edge,
-          x: BOUNDS.right - depth,
+          x: BOUNDS.right - depth - SPIKE_INSET,
           y: start,
           w: depth,
-          h: seg,
+          h: length,
         });
       }
     } else if (edge === 'top') {
@@ -168,13 +191,14 @@ function pickEdgeSpikeLayout() {
       const right = Math.min(BOUNDS.right - pad, CORRAL.x - gatePad);
       const len = right - left;
       if (len > 100) {
-        const seg = len * (0.35 + Math.random() * 0.4);
-        const start = left + Math.random() * Math.max(8, len - seg);
+        const rawSeg = len * (0.35 + Math.random() * 0.4);
+        const rawStart = left + Math.random() * Math.max(SPIKE_STEP, len - rawSeg);
+        const { start, length } = snapSeg(rawStart, rawSeg, left, right);
         specs.push({
           edge,
           x: start,
-          y: BOUNDS.top,
-          w: seg,
+          y: BOUNDS.top + SPIKE_INSET,
+          w: length,
           h: depth,
         });
       }
@@ -182,75 +206,84 @@ function pickEdgeSpikeLayout() {
       const left = BOUNDS.left + pad;
       const right = BOUNDS.right - pad;
       const len = right - left;
-      const seg = len * (0.3 + Math.random() * 0.4);
-      const start = left + Math.random() * Math.max(8, len - seg);
+      const rawSeg = len * (0.3 + Math.random() * 0.4);
+      const rawStart = left + Math.random() * Math.max(SPIKE_STEP, len - rawSeg);
+      const { start, length } = snapSeg(rawStart, rawSeg, left, right);
       specs.push({
         edge,
         x: start,
-        y: BOUNDS.bottom - depth,
-        w: seg,
+        y: BOUNDS.bottom - depth - SPIKE_INSET,
+        w: length,
         h: depth,
       });
     }
   }
 
-  return specs.filter((s) => s.w >= 24 && s.h >= 24);
+  return specs.filter((s) => s.w >= SPIKE_STEP * 2 && s.h >= SPIKE_STEP * 2);
 }
 
 function drawSpikes(gfx, spec) {
   const color = COLORS.wolfEdge;
-  const step = 16;
+  const step = SPIKE_STEP;
+  const tip = 10;
   gfx.clear();
-  gfx.fillStyle(color, 0.35);
+  gfx.fillStyle(color, 0.4);
   gfx.fillRect(spec.x, spec.y, spec.w, spec.h);
-  gfx.lineStyle(2, color, 1);
 
   if (spec.edge === 'left') {
-    for (let y = spec.y; y < spec.y + spec.h - 4; y += step) {
+    const teeth = Math.floor(spec.h / step);
+    for (let i = 0; i < teeth; i += 1) {
+      const y = spec.y + i * step;
       gfx.fillStyle(color, 0.95);
       gfx.fillTriangle(
         spec.x + spec.w,
-        y + 2,
+        y + 1,
         spec.x + spec.w,
-        y + step - 2,
-        spec.x + spec.w + 10,
+        y + step - 1,
+        spec.x + spec.w + tip,
         y + step * 0.5,
       );
     }
   } else if (spec.edge === 'right') {
-    for (let y = spec.y; y < spec.y + spec.h - 4; y += step) {
+    const teeth = Math.floor(spec.h / step);
+    for (let i = 0; i < teeth; i += 1) {
+      const y = spec.y + i * step;
       gfx.fillStyle(color, 0.95);
       gfx.fillTriangle(
         spec.x,
-        y + 2,
+        y + 1,
         spec.x,
-        y + step - 2,
-        spec.x - 10,
+        y + step - 1,
+        spec.x - tip,
         y + step * 0.5,
       );
     }
   } else if (spec.edge === 'top') {
-    for (let x = spec.x; x < spec.x + spec.w - 4; x += step) {
+    const teeth = Math.floor(spec.w / step);
+    for (let i = 0; i < teeth; i += 1) {
+      const x = spec.x + i * step;
       gfx.fillStyle(color, 0.95);
       gfx.fillTriangle(
-        x + 2,
+        x + 1,
         spec.y + spec.h,
-        x + step - 2,
+        x + step - 1,
         spec.y + spec.h,
         x + step * 0.5,
-        spec.y + spec.h + 10,
+        spec.y + spec.h + tip,
       );
     }
   } else {
-    for (let x = spec.x; x < spec.x + spec.w - 4; x += step) {
+    const teeth = Math.floor(spec.w / step);
+    for (let i = 0; i < teeth; i += 1) {
+      const x = spec.x + i * step;
       gfx.fillStyle(color, 0.95);
       gfx.fillTriangle(
-        x + 2,
+        x + 1,
         spec.y,
-        x + step - 2,
+        x + step - 1,
         spec.y,
         x + step * 0.5,
-        spec.y - 10,
+        spec.y - tip,
       );
     }
   }

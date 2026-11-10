@@ -63,32 +63,13 @@ export class WallHazards {
     this.clear();
     const specs = pickWallLayout();
     for (const spec of specs) {
-      const block = this.scene.add.rectangle(
-        spec.x + spec.w / 2,
-        spec.y + spec.h / 2,
-        spec.w,
-        spec.h,
-        COLORS.obstacle,
-      );
-      block.setFillStyle(0x1a2a22, 0.95);
-      block.setStrokeStyle(3, COLORS.obstacleEdge, 1);
-      block.setDepth(1);
-      block.setAlpha(0.3);
+      const built = buildSimpleWall(this.scene, spec.x, spec.y, spec.w, spec.h);
+      built.display.setAlpha(0.3);
       this.walls.push({
         phase: 'warn',
         pulse: Math.random() * 10,
-        block,
-        collider: {
-          x: spec.x,
-          y: spec.y,
-          w: spec.w,
-          h: spec.h,
-          left: spec.x,
-          top: spec.y,
-          right: spec.x + spec.w,
-          bottom: spec.y + spec.h,
-          kind: 'temp',
-        },
+        block: built.display,
+        collider: built.collider,
       });
     }
   }
@@ -96,13 +77,12 @@ export class WallHazards {
   makeSolid() {
     for (const wall of this.walls) {
       wall.phase = 'live';
-      wall.block?.setAlpha(0.95);
-      wall.block?.setStrokeStyle(3, COLORS.obstacleEdge, 1);
+      wall.block?.setAlpha(1);
     }
   }
 
   clear() {
-    for (const wall of this.walls) wall.block?.destroy?.();
+    for (const wall of this.walls) wall.block?.destroy?.(true);
     this.walls = [];
   }
 
@@ -115,6 +95,35 @@ export class WallHazards {
   destroy() {
     this.clear();
   }
+}
+
+/** Misma hitbox de antes; visual = rectángulo simple con borde (sin tiles). */
+function buildSimpleWall(scene, x, y, w, h) {
+  const block = scene.add.rectangle(
+    x + w / 2,
+    y + h / 2,
+    w,
+    h,
+    COLORS.obstacle,
+    0.55,
+  );
+  block.setStrokeStyle(2, COLORS.obstacleEdge, 1);
+  block.setDepth(1);
+
+  return {
+    display: block,
+    collider: {
+      x,
+      y,
+      w,
+      h,
+      left: x,
+      top: y,
+      right: x + w,
+      bottom: y + h,
+      kind: 'temp',
+    },
+  };
 }
 
 function pickWallLayout() {
@@ -130,23 +139,19 @@ function pickWallLayout() {
   const med = Math.min(190, fieldH * 0.45);
 
   const layouts = [
-
     [
       { x: midX - 150, y: top + 20, w: 44, h: short },
       { x: midX + 30, y: bottom - short - 20, w: 44, h: short },
     ],
-
     [
       { x: left + 40, y: midY - 130, w: Math.min(280, playRight - left - 180), h: 40 },
       { x: midX - 40, y: midY + 90, w: Math.min(260, playRight - midX - 40), h: 40 },
     ],
-
     [
       { x: left + 50, y: top + 40, w: 100, h: 40 },
       { x: midX - 22, y: midY - med * 0.5, w: 44, h: med },
       { x: playRight - 160, y: bottom - 100, w: 110, h: 40 },
     ],
-
     [
       { x: midX - 80, y: top + 30, w: 44, h: short },
       { x: midX - 80, y: bottom - short - 30, w: 44, h: short },
