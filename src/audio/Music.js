@@ -85,7 +85,8 @@ class Music {
     this.holding = false;
     this.wasPaused = false;
     this.musicMuted = false;
-    this.musicLevel = 0.3;
+    this.baseLevel = 0.3;
+    this.volume = 1;
   }
 
   start() {
@@ -103,7 +104,7 @@ class Music {
     getSfx().attach(ctx);
 
     this.master = ctx.createGain();
-    this.master.gain.value = this.musicMuted ? 0.0001 : this.musicLevel;
+    this.master.gain.value = this.musicMuted ? 0.0001 : this.effectiveLevel();
 
     this.comp = ctx.createDynamicsCompressor();
     this.comp.threshold.value = -16;
@@ -156,9 +157,19 @@ class Music {
         this.ctx.currentTime,
         0.08,
       );
-      this.musicLevel = next === 'menu' ? 0.26 : 0.32;
+      this.baseLevel = next === 'menu' ? 0.26 : 0.32;
       this.applyGain(this.wasPaused);
     }
+  }
+
+  effectiveLevel() {
+    return this.baseLevel * this.volume;
+  }
+
+  setVolume(volume) {
+    const n = Number(volume);
+    this.volume = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1;
+    this.applyGain(this.wasPaused);
   }
 
   applyTrack() {
@@ -191,8 +202,8 @@ class Music {
 
   applyGain(paused) {
     if (!this.ctx || !this.master) return;
-    const silent = paused || this.musicMuted;
-    this.master.gain.setTargetAtTime(silent ? 0.0001 : this.musicLevel, this.ctx.currentTime, 0.04);
+    const silent = paused || this.musicMuted || this.volume <= 0.001;
+    this.master.gain.setTargetAtTime(silent ? 0.0001 : this.effectiveLevel(), this.ctx.currentTime, 0.04);
   }
 
   tick(paused) {

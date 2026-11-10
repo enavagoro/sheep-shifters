@@ -10,21 +10,41 @@ class Sfx {
     this.ctx = null;
     this.muted = false;
     this.master = null;
+    this.baseLevel = 0.22;
+    this.volume = 1;
   }
 
   attach(ctx) {
     if (!ctx || this.ctx === ctx) return;
     this.ctx = ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0.0001 : 0.22;
+    this.master.gain.value = this.muted ? 0.0001 : this.effectiveLevel();
     this.master.connect(ctx.destination);
+  }
+
+  effectiveLevel() {
+    return this.baseLevel * this.volume;
+  }
+
+  setVolume(volume) {
+    const n = Number(volume);
+    this.volume = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1;
+    this.applyGain();
+  }
+
+  applyGain() {
+    if (!this.master || !this.ctx) return;
+    const silent = this.muted || this.volume <= 0.001;
+    this.master.gain.setTargetAtTime(
+      silent ? 0.0001 : this.effectiveLevel(),
+      this.ctx.currentTime,
+      0.03,
+    );
   }
 
   setMuted(muted) {
     this.muted = muted;
-    if (this.master && this.ctx) {
-      this.master.gain.setTargetAtTime(muted ? 0.0001 : 0.22, this.ctx.currentTime, 0.03);
-    }
+    this.applyGain();
   }
 
   toggleMuted() {

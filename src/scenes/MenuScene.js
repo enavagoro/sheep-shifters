@@ -3,7 +3,7 @@ import { getMusic } from '../audio/Music.js';
 import { getSfx } from '../audio/Sfx.js';
 import { COLORS, DOGS, GAME_HEIGHT, GAME_WIDTH, TUNING } from '../config.js';
 import { t } from '../i18n/strings.js';
-import { loadSettings, updateSettings } from '../systems/Settings.js';
+import { loadSettings, updateSettings, volumePercent } from '../systems/Settings.js';
 import { SPRITES, spriteScale } from '../assets/sprites.js';
 
 const FONT = '"Press Start 2P", "Courier New", monospace';
@@ -22,6 +22,7 @@ export class MenuScene extends Phaser.Scene {
     this.index = 0;
 
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.void);
+    this.createHerdBackdrop();
 
     this.logo = this.add.image(GAME_WIDTH / 2, 0, 'logo')
       .setOrigin(0.5, 1)
@@ -107,6 +108,8 @@ export class MenuScene extends Phaser.Scene {
     });
     this.upHeld = false;
     this.downHeld = false;
+    this.leftHeld = false;
+    this.rightHeld = false;
     this.okHeld = false;
     this.backHeld = false;
     this.shiftHeld = false;
@@ -115,11 +118,15 @@ export class MenuScene extends Phaser.Scene {
     this.sfx = getSfx();
     this.music.start();
     this.music.setMode('menu');
+    this.applyAudioSettings();
 
     this.rebuild();
   }
 
   applyAudioSettings() {
+    const volume = this.settings.volume ?? 1;
+    getMusic().setVolume(volume);
+    getSfx().setVolume(volume);
     getMusic().setMusicMuted(!this.settings.music);
     getSfx().setMuted(!this.settings.sound);
   }
@@ -135,6 +142,7 @@ export class MenuScene extends Phaser.Scene {
         { id: 'language', label: `${t(lang, 'language')}  ${lang.toUpperCase()}` },
         { id: 'music', label: `${t(lang, 'music')}  ${this.settings.music ? t(lang, 'on') : t(lang, 'off')}` },
         { id: 'sound', label: `${t(lang, 'sound')}  ${this.settings.sound ? t(lang, 'on') : t(lang, 'off')}` },
+        { id: 'volume', label: `${t(lang, 'volume')}  ${volumePercent(this.settings.volume)}%` },
         { id: 'back', label: t(lang, 'back') },
       ];
     }
@@ -387,6 +395,7 @@ export class MenuScene extends Phaser.Scene {
 
     const hints = [];
     if (this.screen === 'main' || this.screen === 'options') hints.push(t(lang, 'pressSelect'));
+    if (this.screen === 'options') hints.push(t(lang, 'pressVolume'));
     if (this.screen !== 'main') hints.push(t(lang, 'pressBack'));
     this.hint.setText(hints.join('\n'));
     this.credit.setText(t(lang, 'credit'));
@@ -410,10 +419,15 @@ export class MenuScene extends Phaser.Scene {
     const ok = this.keys.ENTER.isDown || this.keys.SPACE.isDown;
     const back = this.keys.ESC.isDown || this.keys.BACKSPACE.isDown;
 
+    const left = this.keys.left.isDown || this.keys.A.isDown;
+    const right = this.keys.right.isDown || this.keys.D.isDown;
+
     // En controles, WASD/flechas mueven al perro (no el menú)
     if (!onControls) {
       if (up && !this.upHeld) this.move(-1);
       if (down && !this.downHeld) this.move(1);
+      if (left && !this.leftHeld) this.nudge(-1);
+      if (right && !this.rightHeld) this.nudge(1);
       if (ok && !this.okHeld) this.confirm();
     } else if (this.keys.ENTER.isDown && !this.okHeld) {
       this.goBack();
@@ -425,12 +439,164 @@ export class MenuScene extends Phaser.Scene {
 
     this.upHeld = up;
     this.downHeld = down;
+    this.leftHeld = left;
+    this.rightHeld = right;
     this.okHeld = onControls ? this.keys.ENTER.isDown : ok;
     this.backHeld = back;
     this.shiftHeld = this.keys.SHIFT.isDown;
 
-    this.updateControlsDemo(Math.min(delta / 1000, 0.05));
+    const dt = Math.min(delta / 1000, 0.05);
+    this.updateControlsDemo(dt);
+    this.updateHerdBackdrop(dt);
     this.music.tick(false);
+  }
+
+  createHerdBackdrop() {
+    this.herds = [];
+    this.herdSpawnIn = 0.15;
+    this.herdLureIn = 5 + Math.random() * 4;
+  }
+
+  pickHerdSpot(spots, minDist) {
+    let ox = 0;
+    let oy = 0;
+    for (let tries = 0; tries < 24; tries += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 18 + Math.random() * 52;
+      ox = Math.cos(angle) * radius * 1.25;
+      oy = Math.sin(angle) * radius * 0.85;
+      const ok = spots.every((s) => Math.hypot(ox - s.ox, oy - s.oy) >= minDist);
+      if (ok) break;
+    }
+    spots.push({ ox, oy });
+    return { ox, oy };
+  }
+
+  spawnHerd({ withLure = false } = {}) {
+    const goingRight = Math.random() < 0.5;
+    const count = 4 + Math.floor(Math.random() * 4);
+    const band = Math.random();
+    const y = band < 0.35
+      ? 120 + Math.random() * 90
+      : (band < 0.7
+        ? GAME_HEIGHT * 0.42 + Math.random() * 80
+        : GAME_HEIGHT - 160 - Math.random() * 70);
+    const speed = 38 + Math.random() * 52;
+    const sheepScale = spriteScale(SPRITES.sheep) * (0.5 + Math.random() * 0.28);
+    const lureScale = spriteScale(SPRITES.sheepwolf) * (0.52 + Math.random() * 0.22);
+    const members = [];
+    const spots = [];
+    const minDist = 46;
+    const lureIndex = withLure ? Math.floor(Math.random() * count) : -1;
+
+    // Manada junta pero sin solaparse
+    for (let i = 0; i < count; i += 1) {
+      const { ox, oy } = this.pickHerdSpot(spots, minDist);
+      const isLure = i === lureIndex;
+      const alpha = isLure ? 0.38 + Math.random() * 0.18 : 0.22 + Math.random() * 0.22;
+      const sprite = this.add.sprite(
+        goingRight ? -50 + ox : GAME_WIDTH + 50 + ox,
+        y + oy,
+        isLure ? 'sheepwolf' : 'sheep',
+        0,
+      )
+        .setOrigin(0.5)
+        .setDepth(1 + (oy > 0 ? 0.1 : 0))
+        .setAlpha(alpha)
+        .setScale((isLure ? lureScale : sheepScale) * (0.88 + Math.random() * 0.24))
+        .setTint(isLure ? 0xd8c4a8 : 0xb7d4c2)
+        .setFlipX(!goingRight);
+      sprite.play(isLure ? 'sheepwolf-walk' : 'sheep-walk');
+      members.push({
+        sprite,
+        ox,
+        oy,
+        alpha,
+        phase: Math.random() * Math.PI * 2,
+        lure: isLure,
+      });
+    }
+
+    this.herds.push({
+      members,
+      x: goingRight ? -90 : GAME_WIDTH + 90,
+      y,
+      vx: goingRight ? speed : -speed,
+      goingRight,
+      hasLure: withLure,
+    });
+  }
+
+  injectLureIntoHerd(herd) {
+    if (!herd || herd.hasLure) return false;
+    const spots = herd.members.map((m) => ({ ox: m.ox, oy: m.oy }));
+    const { ox, oy } = this.pickHerdSpot(spots, 46);
+    const alpha = 0.4 + Math.random() * 0.18;
+    const scale = spriteScale(SPRITES.sheepwolf) * (0.55 + Math.random() * 0.2);
+    const sprite = this.add.sprite(herd.x + ox, herd.y + oy, 'sheepwolf', 0)
+      .setOrigin(0.5)
+      .setDepth(1.2)
+      .setAlpha(alpha)
+      .setScale(scale)
+      .setTint(0xd8c4a8)
+      .setFlipX(!herd.goingRight);
+    sprite.play('sheepwolf-walk');
+    herd.members.push({
+      sprite,
+      ox,
+      oy,
+      alpha,
+      phase: Math.random() * Math.PI * 2,
+      lure: true,
+    });
+    herd.hasLure = true;
+    return true;
+  }
+
+  updateHerdBackdrop(dt) {
+    const show = this.screen !== 'controls';
+    if (show) {
+      this.herdSpawnIn -= dt;
+      if (this.herdSpawnIn <= 0 && this.herds.length < 5) {
+        this.spawnHerd();
+        this.herdSpawnIn = 0.7 + Math.random() * 1.4;
+      }
+
+      this.herdLureIn -= dt;
+      if (this.herdLureIn <= 0) {
+        const candidates = this.herds.filter((herd) => !herd.hasLure);
+        let placed = false;
+        if (candidates.length) {
+          placed = this.injectLureIntoHerd(
+            candidates[Math.floor(Math.random() * candidates.length)],
+          );
+        }
+        if (!placed && this.herds.length < 5) {
+          this.spawnHerd({ withLure: true });
+          placed = true;
+        }
+        if (placed) this.herdLureIn = 7 + Math.random() * 6;
+        else this.herdLureIn = 1.5;
+      }
+    }
+
+    for (const herd of this.herds) {
+      herd.x += herd.vx * dt;
+      for (const member of herd.members) {
+        member.phase += dt * 2.8;
+        const bob = Math.sin(member.phase) * 2.2;
+        member.sprite.setPosition(herd.x + member.ox, herd.y + member.oy + bob);
+        member.sprite.setVisible(show);
+        member.sprite.setAlpha(show ? member.alpha : 0);
+      }
+    }
+
+    this.herds = this.herds.filter((herd) => {
+      const gone = herd.goingRight ? herd.x > GAME_WIDTH + 220 : herd.x < -220;
+      if (!gone) return true;
+      for (const member of herd.members) member.sprite.destroy();
+      return false;
+    });
   }
 
   move(dir) {
@@ -439,6 +605,28 @@ export class MenuScene extends Phaser.Scene {
     if (!items.length) return;
     this.index = (this.index + dir + items.length) % items.length;
     this.sfx.play('switch');
+    this.rebuild();
+  }
+
+  nudge(dir) {
+    if (this.screen !== 'options') return;
+    const item = this.itemsForScreen()[this.index];
+    if (!item) return;
+    if (item.id === 'volume') {
+      this.adjustVolume(dir);
+      return;
+    }
+    if (item.id === 'language' || item.id === 'music' || item.id === 'sound') {
+      this.confirm();
+    }
+  }
+
+  adjustVolume(dir) {
+    const next = Math.max(0, Math.min(1, (this.settings.volume ?? 1) + dir * 0.1));
+    if (Math.abs(next - (this.settings.volume ?? 1)) < 0.001) return;
+    this.settings = updateSettings({ volume: next });
+    this.applyAudioSettings();
+    this.sfx.play('ui');
     this.rebuild();
   }
 
@@ -489,6 +677,10 @@ export class MenuScene extends Phaser.Scene {
         this.settings = updateSettings({ sound: !this.settings.sound });
         this.applyAudioSettings();
         this.rebuild();
+        return;
+      }
+      if (item.id === 'volume') {
+        this.adjustVolume(1);
         return;
       }
       if (item.id === 'back') this.goBack();

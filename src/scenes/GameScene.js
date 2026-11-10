@@ -21,7 +21,7 @@ import { POWER_INFO, PowerDrop, randomPowerKind } from '../entities/PowerDrop.js
 import { SpikeHazards } from '../systems/SpikeHazards.js';
 import { WallHazards } from '../systems/WallHazards.js';
 import { ejectFromObstacles, ejectFromSpike } from '../systems/collision.js';
-import { loadSettings } from '../systems/Settings.js';
+import { loadSettings, updateSettings } from '../systems/Settings.js';
 export class GameScene extends Phaser.Scene {
   constructor() {
     super('GameScene');
@@ -64,6 +64,8 @@ export class GameScene extends Phaser.Scene {
     this.sfx = getSfx();
     const settings = loadSettings();
     this.music.setMode('game');
+    this.music.setVolume(settings.volume ?? 1);
+    this.sfx.setVolume(settings.volume ?? 1);
     this.music.setMusicMuted(!settings.music);
     this.sfx.setMuted(!settings.sound);
 
@@ -1029,29 +1031,60 @@ export class GameScene extends Phaser.Scene {
     this.spaceHeld = powerDown;
   }
 
+  adjustVolume(dir) {
+    const settings = loadSettings();
+    const next = Math.max(0, Math.min(1, (settings.volume ?? 1) + dir * 0.1));
+    if (Math.abs(next - (settings.volume ?? 1)) < 0.001) return;
+    updateSettings({ volume: next });
+    this.music.setVolume(next);
+    this.sfx.setVolume(next);
+    this.sfx.play('ui');
+  }
+
   readPauseMenu() {
     if (!this.state.paused || this.state.over) {
       this.upHeld = this.keys.up.isDown || this.keys.W.isDown;
       this.downHeld = this.keys.down.isDown || this.keys.S.isDown;
+      this.leftHeld = this.keys.left.isDown || this.keys.A.isDown;
+      this.rightHeld = this.keys.right.isDown || this.keys.D.isDown;
       this.enterHeld = this.keys.ENTER.isDown;
       return;
     }
 
     const upDown = this.keys.up.isDown || this.keys.W.isDown;
     const downDown = this.keys.down.isDown || this.keys.S.isDown;
-    const enterDown = this.keys.ENTER.isDown
-      || this.keys.left.isDown
-      || this.keys.right.isDown
-      || this.keys.A.isDown
-      || this.keys.D.isDown;
+    const leftDown = this.keys.left.isDown || this.keys.A.isDown;
+    const rightDown = this.keys.right.isDown || this.keys.D.isDown;
+    const enterDown = this.keys.ENTER.isDown;
+    const menuCount = 5;
 
     if (upDown && !this.upHeld) {
-      this.hud.menuIndex = (this.hud.menuIndex + 3) % 4;
+      this.hud.menuIndex = (this.hud.menuIndex + menuCount - 1) % menuCount;
       this.sfx.play('ui');
     }
     if (downDown && !this.downHeld) {
-      this.hud.menuIndex = (this.hud.menuIndex + 1) % 4;
+      this.hud.menuIndex = (this.hud.menuIndex + 1) % menuCount;
       this.sfx.play('ui');
+    }
+    if (leftDown && !this.leftHeld) {
+      if (this.hud.menuIndex === 2) this.adjustVolume(-1);
+      else if (this.hud.menuIndex === 0) {
+        this.music.toggleMusicMuted();
+        this.sfx.play('ui');
+      } else if (this.hud.menuIndex === 1) {
+        this.sfx.toggleMuted();
+        this.sfx.play('ui');
+      }
+    }
+    if (rightDown && !this.rightHeld) {
+      if (this.hud.menuIndex === 2) this.adjustVolume(1);
+      else if (this.hud.menuIndex === 0) {
+        this.music.toggleMusicMuted();
+        this.sfx.play('ui');
+      } else if (this.hud.menuIndex === 1) {
+        this.sfx.toggleMuted();
+        this.sfx.play('ui');
+      }
     }
     if (enterDown && !this.enterHeld) {
       if (this.hud.menuIndex === 0) {
@@ -1061,6 +1094,8 @@ export class GameScene extends Phaser.Scene {
         this.sfx.toggleMuted();
         this.sfx.play('ui');
       } else if (this.hud.menuIndex === 2) {
+        this.adjustVolume(1);
+      } else if (this.hud.menuIndex === 3) {
         this.scene.restart();
         return;
       } else {
@@ -1071,6 +1106,8 @@ export class GameScene extends Phaser.Scene {
 
     this.upHeld = upDown;
     this.downHeld = downDown;
+    this.leftHeld = leftDown;
+    this.rightHeld = rightDown;
     this.enterHeld = enterDown;
   }
 

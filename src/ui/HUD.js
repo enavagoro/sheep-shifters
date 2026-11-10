@@ -1,6 +1,6 @@
 import { BOUNDS, COLORS, DOGS, GAME_HEIGHT, GAME_WIDTH, UI_BAR, UI_BOTTOM } from '../config.js';
 import { t } from '../i18n/strings.js';
-import { loadSettings } from '../systems/Settings.js';
+import { loadSettings, volumePercent } from '../systems/Settings.js';
 
 const SCORE_FONT = '"Press Start 2P", "Courier New", monospace';
 
@@ -98,12 +98,12 @@ export class HUD {
       .setDepth(1190)
       .setVisible(false);
 
-    this.pausePanel = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 420, 300, COLORS.void, 0.96)
+    this.pausePanel = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 420, 340, COLORS.void, 0.96)
       .setDepth(1195)
       .setStrokeStyle(2, COLORS.frame)
       .setVisible(false);
 
-    this.pauseText = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 108, t(lang, 'pause'), {
+    this.pauseText = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 128, t(lang, 'pause'), {
       fontFamily: SCORE_FONT,
       fontSize: '28px',
       color: '#39ff6a',
@@ -113,28 +113,35 @@ export class HUD {
     this.pauseText.setDepth(1200);
     this.pauseText.setVisible(false);
 
-    this.menuMusic = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 48, '', {
+    this.menuMusic = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 68, '', {
       fontFamily: SCORE_FONT,
       fontSize: '12px',
       color: '#39ff6a',
       resolution: 2,
     }).setOrigin(0.5).setDepth(1200).setVisible(false);
 
-    this.menuSfx = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 12, '', {
+    this.menuSfx = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 32, '', {
       fontFamily: SCORE_FONT,
       fontSize: '12px',
       color: '#39ff6a',
       resolution: 2,
     }).setOrigin(0.5).setDepth(1200).setVisible(false);
 
-    this.menuRestart = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 24, '', {
+    this.menuVolume = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 4, '', {
+      fontFamily: SCORE_FONT,
+      fontSize: '12px',
+      color: '#39ff6a',
+      resolution: 2,
+    }).setOrigin(0.5).setDepth(1200).setVisible(false);
+
+    this.menuRestart = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40, '', {
       fontFamily: SCORE_FONT,
       fontSize: '12px',
       color: '#39ff6a',
       resolution: 2,
     }).setOrigin(0.5).setDepth(1200).setVisible(false)
       .setInteractive({ useHandCursor: true });
-    this.menuToMenu = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60, '', {
+    this.menuToMenu = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 76, '', {
       fontFamily: SCORE_FONT,
       fontSize: '12px',
       color: '#39ff6a',
@@ -151,6 +158,7 @@ export class HUD {
     });
     this.menuMusic.setInteractive({ useHandCursor: true });
     this.menuSfx.setInteractive({ useHandCursor: true });
+    this.menuVolume.setInteractive({ useHandCursor: true });
     this.menuMusic.on('pointerdown', () => {
       if (!scene.state?.paused || scene.state?.over) return;
       scene.hud.menuIndex = 0;
@@ -163,10 +171,15 @@ export class HUD {
       scene.sfx.toggleMuted();
       scene.sfx.play('ui');
     });
+    this.menuVolume.on('pointerdown', () => {
+      if (!scene.state?.paused || scene.state?.over) return;
+      scene.hud.menuIndex = 2;
+      scene.adjustVolume?.(1);
+    });
 
     this.pauseHint = scene.add.text(
       GAME_WIDTH / 2,
-      GAME_HEIGHT / 2 + 118,
+      GAME_HEIGHT / 2 + 132,
       t(lang, 'pauseHint'),
       {
         fontFamily: SCORE_FONT,
@@ -511,6 +524,7 @@ export class HUD {
     this.pauseHint.setVisible(paused);
     this.menuMusic.setVisible(paused);
     this.menuSfx.setVisible(paused);
+    this.menuVolume.setVisible(paused);
     this.menuRestart.setVisible(paused);
     this.menuToMenu.setVisible(paused);
     this.gameOver.setVisible(state.over);
@@ -520,22 +534,26 @@ export class HUD {
       const sfxOn = !audio.sfxMuted;
       const on = t(lang, 'on');
       const off = t(lang, 'off');
+      const vol = volumePercent(loadSettings().volume);
       const musicLine = `${this.menuIndex === 0 ? '>' : ' '} ${t(lang, 'music')}  ${musicOn ? on : off}`;
       const sfxLine = `${this.menuIndex === 1 ? '>' : ' '} ${t(lang, 'sound')}  ${sfxOn ? on : off}`;
-      const restartLine = `${this.menuIndex === 2 ? '>' : ' '} ${t(lang, 'restart')}`;
-      const toMenuLine = `${this.menuIndex === 3 ? '>' : ' '} ${t(lang, 'toMenu')}`;
+      const volumeLine = `${this.menuIndex === 2 ? '>' : ' '} ${t(lang, 'volume')}  ${vol}%`;
+      const restartLine = `${this.menuIndex === 3 ? '>' : ' '} ${t(lang, 'restart')}`;
+      const toMenuLine = `${this.menuIndex === 4 ? '>' : ' '} ${t(lang, 'toMenu')}`;
       this.pauseText.setText(t(lang, 'pause'));
       this.pauseHint.setText(t(lang, 'pauseHint'));
       this.shiftHint.setText(t(lang, 'shiftChange'));
       this.powerUseHint?.setText(t(lang, 'powerUse'));
       this.menuMusic.setText(musicLine);
       this.menuSfx.setText(sfxLine);
+      this.menuVolume.setText(volumeLine);
       this.menuRestart.setText(restartLine);
       this.menuToMenu.setText(toMenuLine);
       this.menuMusic.setColor(this.menuIndex === 0 ? '#ffe14a' : '#39ff6a');
       this.menuSfx.setColor(this.menuIndex === 1 ? '#ffe14a' : '#39ff6a');
-      this.menuRestart.setColor(this.menuIndex === 2 ? '#ffe14a' : '#39ff6a');
-      this.menuToMenu.setColor(this.menuIndex === 3 ? '#ffe14a' : '#39ff6a');
+      this.menuVolume.setColor(this.menuIndex === 2 ? '#ffe14a' : '#39ff6a');
+      this.menuRestart.setColor(this.menuIndex === 3 ? '#ffe14a' : '#39ff6a');
+      this.menuToMenu.setColor(this.menuIndex === 4 ? '#ffe14a' : '#39ff6a');
     }
 
     this.warning.setVisible(warningOn && !state.over);
