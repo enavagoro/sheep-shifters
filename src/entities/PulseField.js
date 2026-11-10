@@ -151,10 +151,17 @@ export class PulseField {
       const colMax = Math.ceil((this.right - ox - xShift) / cell) + 1;
       for (let col = colMin; col <= colMax; col += 1) {
         const x = col * cell + ox + xShift;
+        // Solo lados diagonales (sin base horizontal)
         if (odd) {
-          g.strokeTriangle(x, y + h * 0.15, x + cell * 0.5, y + h * 0.85, x + cell, y + h * 0.15);
+          const baseY = y + h * 0.15;
+          const apexY = y + h * 0.85;
+          g.lineBetween(x, baseY, x + cell * 0.5, apexY);
+          g.lineBetween(x + cell * 0.5, apexY, x + cell, baseY);
         } else {
-          g.strokeTriangle(x, y + h * 0.85, x + cell * 0.5, y + h * 0.15, x + cell, y + h * 0.85);
+          const baseY = y + h * 0.85;
+          const apexY = y + h * 0.15;
+          g.lineBetween(x, baseY, x + cell * 0.5, apexY);
+          g.lineBetween(x + cell * 0.5, apexY, x + cell, baseY);
         }
       }
     }
@@ -196,12 +203,37 @@ export class PulseField {
   }
 
   drawDiamonds(g) {
+    // Zigzags continuos por fila (nunca traza horizontales)
     const s = this.gap;
-    const drift = this.wrap(this.scroll, s);
-    for (let y = this.top - s + drift; y <= this.bottom + s; y += s) {
-      for (let x = this.left - s + drift; x <= this.right + s; x += s) {
-        g.strokeTriangle(x, y, x + s * 0.5, y - s * 0.5, x + s, y);
-        g.strokeTriangle(x, y, x + s * 0.5, y + s * 0.5, x + s, y);
+    const ox = this.scroll;
+    const oy = this.scroll;
+    const rowMin = Math.floor((this.top - oy) / s) - 1;
+    const rowMax = Math.ceil((this.bottom - oy) / s) + 1;
+
+    for (let row = rowMin; row <= rowMax; row += 1) {
+      const y = row * s + oy;
+      const colMin = Math.floor((this.left - ox) / s) - 1;
+      const colMax = Math.ceil((this.right - ox) / s) + 1;
+      let prevUpX = colMin * s + ox;
+      let prevUpY = y;
+      let prevDnX = prevUpX;
+      let prevDnY = y;
+      for (let col = colMin; col <= colMax; col += 1) {
+        const x = col * s + ox;
+        const midX = x + s * 0.5;
+        const peakY = y - s * 0.5;
+        const troughY = y + s * 0.5;
+        const nextX = x + s;
+        // /\
+        g.lineBetween(prevUpX, prevUpY, midX, peakY);
+        g.lineBetween(midX, peakY, nextX, y);
+        // \/
+        g.lineBetween(prevDnX, prevDnY, midX, troughY);
+        g.lineBetween(midX, troughY, nextX, y);
+        prevUpX = nextX;
+        prevUpY = y;
+        prevDnX = nextX;
+        prevDnY = y;
       }
     }
   }

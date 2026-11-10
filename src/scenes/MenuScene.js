@@ -493,7 +493,7 @@ export class MenuScene extends Phaser.Scene {
     for (let i = 0; i < count; i += 1) {
       const { ox, oy } = this.pickHerdSpot(spots, minDist);
       const isLure = i === lureIndex;
-      const alpha = isLure ? 0.38 + Math.random() * 0.18 : 0.22 + Math.random() * 0.22;
+      const alpha = isLure ? 0.72 + Math.random() * 0.16 : 0.62 + Math.random() * 0.2;
       const sprite = this.add.sprite(
         goingRight ? -50 + ox : GAME_WIDTH + 50 + ox,
         y + oy,
@@ -504,7 +504,7 @@ export class MenuScene extends Phaser.Scene {
         .setDepth(1 + (oy > 0 ? 0.1 : 0))
         .setAlpha(alpha)
         .setScale((isLure ? lureScale : sheepScale) * (0.88 + Math.random() * 0.24))
-        .setTint(isLure ? 0xd8c4a8 : 0xb7d4c2)
+        .setTint(isLure ? 0xf0e2d0 : 0xf5f7f2)
         .setFlipX(!goingRight);
       sprite.play(isLure ? 'sheepwolf-walk' : 'sheep-walk');
       members.push({
@@ -531,14 +531,14 @@ export class MenuScene extends Phaser.Scene {
     if (!herd || herd.hasLure) return false;
     const spots = herd.members.map((m) => ({ ox: m.ox, oy: m.oy }));
     const { ox, oy } = this.pickHerdSpot(spots, 46);
-    const alpha = 0.4 + Math.random() * 0.18;
+    const alpha = 0.75 + Math.random() * 0.15;
     const scale = spriteScale(SPRITES.sheepwolf) * (0.55 + Math.random() * 0.2);
     const sprite = this.add.sprite(herd.x + ox, herd.y + oy, 'sheepwolf', 0)
       .setOrigin(0.5)
       .setDepth(1.2)
       .setAlpha(alpha)
       .setScale(scale)
-      .setTint(0xd8c4a8)
+      .setTint(0xf0e2d0)
       .setFlipX(!herd.goingRight);
     sprite.play('sheepwolf-walk');
     herd.members.push({
