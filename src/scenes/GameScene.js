@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { getMusic } from '../audio/Music.js';
 import { getSfx } from '../audio/Sfx.js';
+import { applyCurvedScreen } from '../fx/CurvedScreen.js';
 import { BOUNDS, COLORS, DOGS, GAME_HEIGHT, GAME_WIDTH, TUNING, paceForLevel } from '../config.js';
 import { createArena } from '../entities/Arena.js';
 import { Corral } from '../entities/Corral.js';
@@ -30,6 +31,7 @@ export class GameScene extends Phaser.Scene {
   create() {
     this.cameras.main.roundPixels = true;
     this.cameras.main.setBackgroundColor('#050706');
+    applyCurvedScreen(this);
     ensureSpriteAnims(this);
 
     const arena = createArena(this);
@@ -840,7 +842,7 @@ export class GameScene extends Phaser.Scene {
     this.sheepWolves.push(new SheepWolf(this, point));
     this.sheepWolfTimer = TUNING.sheepWolfInterval;
     this.vfx.ring(point.x, point.y, 0xff3355, 10, 40, 280);
-    this.sfx.play('sheepwolf');
+    this.sfx.play('sheepwolfBleat');
   }
 
   pickSheepWolfOrigin() {

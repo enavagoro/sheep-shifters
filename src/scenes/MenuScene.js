@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { getMusic } from '../audio/Music.js';
 import { getSfx } from '../audio/Sfx.js';
+import { applyCurvedScreen } from '../fx/CurvedScreen.js';
 import { COLORS, DOGS, GAME_HEIGHT, GAME_WIDTH, TUNING } from '../config.js';
 import { t } from '../i18n/strings.js';
 import { loadSettings, updateSettings, volumePercent } from '../systems/Settings.js';
@@ -15,6 +16,7 @@ export class MenuScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor('#050706');
+    applyCurvedScreen(this);
     this.settings = loadSettings();
     this.applyAudioSettings();
 
@@ -155,9 +157,9 @@ export class MenuScene extends Phaser.Scene {
 
   createControlsDemo() {
     const cx = GAME_WIDTH / 2;
-    const cy = GAME_HEIGHT / 2 - 36;
-    const w = 460;
-    const h = 240;
+    const cy = GAME_HEIGHT / 2 - 54;
+    const w = 530;
+    const h = 276;
     const starts = [
       { x: cx - 130, y: cy + 30 },
       { x: cx - 40, y: cy + 50 },
@@ -241,7 +243,7 @@ export class MenuScene extends Phaser.Scene {
     this.controlsTitle?.setVisible(on);
     if (on && this.demo) {
       const cx = GAME_WIDTH / 2;
-      const cy = GAME_HEIGHT / 2 - 36;
+      const cy = GAME_HEIGHT / 2 - 54;
       const starts = [
         { x: cx - 130, y: cy + 30 },
         { x: cx - 40, y: cy + 50 },
@@ -289,7 +291,6 @@ export class MenuScene extends Phaser.Scene {
       dog.vy = 0;
     }
 
-    // Idle dogs don't move
     d.dogs.forEach((other, i) => {
       if (i === d.dogIndex) return;
       other.vx = 0;
@@ -304,7 +305,6 @@ export class MenuScene extends Phaser.Scene {
     let dy = Math.sin(sheep.wanderAngle) * 0.42;
     let fleeing = false;
 
-    // Huye de los 3 perros (como en partida sin owner)
     for (const hound of d.dogs) {
       const fx = sheep.x - hound.x;
       const fy = sheep.y - hound.y;
@@ -422,7 +422,6 @@ export class MenuScene extends Phaser.Scene {
     const left = this.keys.left.isDown || this.keys.A.isDown;
     const right = this.keys.right.isDown || this.keys.D.isDown;
 
-    // En controles, WASD/flechas mueven al perro (no el menú)
     if (!onControls) {
       if (up && !this.upHeld) this.move(-1);
       if (down && !this.downHeld) this.move(1);
@@ -489,7 +488,6 @@ export class MenuScene extends Phaser.Scene {
     const minDist = 46;
     const lureIndex = withLure ? Math.floor(Math.random() * count) : -1;
 
-    // Manada junta pero sin solaparse
     for (let i = 0; i < count; i += 1) {
       const { ox, oy } = this.pickHerdSpot(spots, minDist);
       const isLure = i === lureIndex;
@@ -638,7 +636,7 @@ export class MenuScene extends Phaser.Scene {
 
     const item = this.itemsForScreen()[this.index];
     if (!item) return;
-    this.sfx.play('bark');
+    this.sfx.play('menuBark');
 
     if (this.screen === 'main') {
       if (item.id === 'play') {

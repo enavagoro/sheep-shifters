@@ -126,7 +126,6 @@ export const BOUNDS = {
   left: 18,
   top: UI_BAR + 10,
   right: 1262,
-  // Deja hueco para el panel de poder del HUD inferior
   bottom: GAME_HEIGHT - UI_BOTTOM - 56,
 };
 

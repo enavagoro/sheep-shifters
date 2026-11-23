@@ -1,5 +1,3 @@
-/** Utilidades de color HSV → hex Phaser. */
-
 export function hsv(h, s, v) {
   const hue = ((h % 360) + 360) % 360;
   const c = v * s;
@@ -24,13 +22,11 @@ export function toCss(color) {
   return `#${hex}`;
 }
 
-/** Paleta suave: mismos tonos, saturación/brillo contenidos. */
 export function themeFromHue(hue, energy = 0) {
   const e = Math.max(0, Math.min(1, energy));
   const dark = hsv(hue, 0.42, 0.035 + e * 0.015);
   const mid = hsv(hue, 0.38, 0.07 + e * 0.02);
   const band = hsv(hue, 0.4, 0.1 + e * 0.025);
-  // Líneas / marco / corral: siguen luminosas
   const accent = hsv(hue, 0.7, 0.78 + e * 0.1);
   const accentDim = hsv(hue, 0.55, 0.5 + e * 0.08);
   return { hue, dark, mid, band, accent, accentDim };

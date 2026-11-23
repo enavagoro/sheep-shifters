@@ -12,12 +12,10 @@ export class HUD {
     scene.add.rectangle(GAME_WIDTH / 2, UI_BAR / 2, GAME_WIDTH, UI_BAR, COLORS.void)
       .setDepth(1000);
 
-    // Divisor superior (oculto por ahora)
     scene.add.rectangle(GAME_WIDTH / 2, UI_BAR - 1, GAME_WIDTH, 2, COLORS.frame, 0.35)
       .setDepth(1000)
       .setVisible(false);
 
-    // Margen top de los textos del HUD
     const hudY = UI_BAR / 2 + 4;
 
     this.scoreLine = scene.add.text(22, hudY - 8, 'SCORE 0', {
@@ -197,7 +195,6 @@ export class HUD {
     scene.add.rectangle(GAME_WIDTH / 2, bottomY, GAME_WIDTH, UI_BOTTOM, COLORS.void)
       .setDepth(1000)
       .setScrollFactor(0);
-    // Divisor inferior (oculto por ahora)
     scene.add.rectangle(GAME_WIDTH / 2, barTop + 1, GAME_WIDTH, 2, COLORS.frame, 0.35)
       .setDepth(1000)
       .setScrollFactor(0)
@@ -216,7 +213,6 @@ export class HUD {
       .setStrokeStyle(2, 0x24352c)
       .setDepth(1001)
       .setScrollFactor(0);
-    // Un solo círculo de color (sin anillos dobles)
     this.powerSlot = scene.add.circle(iconX, panelY, 12, 0x121a16, 1)
       .setStrokeStyle(1, 0x2a3a30)
       .setDepth(1002)
@@ -239,7 +235,6 @@ export class HUD {
       resolution: 2,
     }).setOrigin(0, 0.5).setDepth(1003).setScrollFactor(0);
 
-    // Como "SHIFT PARA CAMBIAR", pero al lado del panel de poder
     this.powerUseHint = scene.add.text(panelX + panelW / 2 + 14, panelY, t(lang, 'powerUse'), {
       fontFamily: SCORE_FONT,
       fontSize: '8px',
@@ -281,7 +276,6 @@ export class HUD {
       resolution: 2,
     }).setOrigin(0.5).setVisible(false);
 
-    // Columna izquierda: partida actual
     this.overRunTitle = scene.add.text(-120, -40, t(lang, 'thisRun'), {
       fontFamily: SCORE_FONT,
       fontSize: '8px',
@@ -301,7 +295,6 @@ export class HUD {
       resolution: 2,
     }).setOrigin(0.5);
 
-    // Columna derecha: records
     this.overRecordsTitle = scene.add.text(120, -40, t(lang, 'records'), {
       fontFamily: SCORE_FONT,
       fontSize: '8px',
@@ -414,7 +407,6 @@ export class HUD {
     const powerName = powerLabelFor(lang, power.id) || power.label;
     this.powerLabel.setText(charged ? powerName : t(lang, 'powerEmpty'));
     this.powerLabel.setColor(charged ? '#e8fff0' : '#6a7a70');
-    // Dentro del cuadro: LISTO o timer. Teclas afuera, como SHIFT.
     let hint = '—';
     if (charged) hint = activeTimer ? raw : t(lang, 'powerHint');
     this.powerHint.setText(hint);

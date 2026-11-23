@@ -110,7 +110,7 @@ export class SpikeHazards {
 }
 
 const SPIKE_STEP = 16;
-const SPIKE_INSET = 2; // deja el filo neon del marco libre
+const SPIKE_INSET = 2;
 
 function snap(value, step = SPIKE_STEP) {
   return Math.round(value / step) * step;

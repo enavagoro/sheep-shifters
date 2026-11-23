@@ -97,7 +97,6 @@ export class WallHazards {
   }
 }
 
-/** Misma hitbox de antes; visual = rectángulo simple con borde (sin tiles). */
 function buildSimpleWall(scene, x, y, w, h) {
   const block = scene.add.rectangle(
     x + w / 2,

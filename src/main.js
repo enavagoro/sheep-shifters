@@ -3,6 +3,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from './config.js';
 import { BootScene } from './scenes/BootScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { MenuScene } from './scenes/MenuScene.js';
+import { CurvedScreen } from './fx/CurvedScreen.js';
 
 async function boot() {
   if (document.fonts?.load) {
@@ -38,6 +39,7 @@ async function boot() {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
+    pipeline: { CurvedScreen },
     scene: [BootScene, MenuScene, GameScene],
   });
 

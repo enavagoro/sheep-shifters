@@ -2,7 +2,12 @@ import { getSfx } from './Sfx.js';
 
 const GAME_TRACK_SECONDS = 30;
 
-// Menú: electrónica 8-bit calmada
+const GAME_SONGS = [
+  ['assets/music/penguins-vs-rabbits.ogg', 'assets/music/penguins-vs-rabbits.mp3'],
+];
+const SONG_GAIN = 0.6;
+const SONG_DUCK = 0.65;
+
 const MENU = {
   bpm: 92,
   bass: [
@@ -26,7 +31,6 @@ const MENU = {
   drums: 'soft',
 };
 
-// Juego A: chase chip
 const GAME_A = {
   bpm: 168,
   bass: [
@@ -45,7 +49,6 @@ const GAME_A = {
   drums: 'drive',
 };
 
-// Juego B: pulse nocturno (se intercala ~cada 30s)
 const GAME_B = {
   bpm: 168,
   bass: [
@@ -134,12 +137,94 @@ class Music {
     this.beats = [];
     this.nextNoteTime = ctx.currentTime + 0.06;
     this.beatAt = ctx.currentTime;
+
+    this.songGain = ctx.createGain();
+    this.songGain.gain.value = SONG_GAIN;
+    this.analyser = ctx.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.5;
+    this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
+    this.bassAvg = 0;
+    this.songEnergy = 0;
+    this.songGain.connect(this.analyser);
+    this.analyser.connect(this.master);
+    this.songBuffers = [];
+    GAME_SONGS.forEach((urls, i) => this.loadSong(ctx, urls, i));
+    getSfx().onPlay = (duration) => this.duck(duration);
+  }
+
+  duck(duration = 0.2) {
+    if (!this.ctx || !this.songSource) return;
+    const g = this.songGain.gain;
+    const now = this.ctx.currentTime;
+    g.cancelScheduledValues(now);
+    g.setTargetAtTime(SONG_GAIN * SONG_DUCK, now, 0.015);
+    g.setTargetAtTime(SONG_GAIN, now + Math.max(0.12, duration), 0.12);
+  }
+
+  async loadSong(ctx, urls, index) {
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.arrayBuffer();
+        const buffer = await ctx.decodeAudioData(data);
+        if (this.ctx !== ctx) return;
+        this.songBuffers[index] = buffer;
+        this.syncSong();
+        return;
+      } catch {
+      }
+    }
+  }
+
+  get songBuffer() {
+    return this.songBuffers?.[this.songIndex || 0] || null;
+  }
+
+  usingSong() {
+    return this.mode === 'game' && !!this.songBuffer;
+  }
+
+  nextSong() {
+    this.songIndex = ((this.songIndex || 0) + 1) % GAME_SONGS.length;
+    this.songOffset = 0;
+  }
+
+  syncSong() {
+    if (!this.ctx) return;
+    const shouldPlay = this.usingSong() && !this.wasPaused && !this.musicMuted;
+    if (shouldPlay && !this.songSource) {
+      const source = this.ctx.createBufferSource();
+      source.buffer = this.songBuffer;
+      source.loop = false;
+      source.connect(this.songGain);
+      source.onended = () => {
+        if (this.songSource !== source) return;
+        source.disconnect();
+        this.songSource = null;
+        this.nextSong();
+        this.syncSong();
+      };
+      const offset = (this.songOffset || 0) % this.songBuffer.duration;
+      source.start(this.ctx.currentTime + 0.02, offset);
+      this.songSource = source;
+      this.songStartedAt = this.ctx.currentTime + 0.02 - offset;
+    } else if (!shouldPlay && this.songSource) {
+      const source = this.songSource;
+      this.songSource = null;
+      this.songOffset = Math.max(0, this.ctx.currentTime - this.songStartedAt);
+      try { source.stop(); } catch {}
+      source.disconnect();
+    }
   }
 
   stop() {
     if (!this.ctx) return;
     this.ctx.close();
     this.ctx = null;
+    this.songSource = null;
+    this.songBuffers = [];
   }
 
   setMode(mode) {
@@ -150,6 +235,10 @@ class Music {
     this.step = 0;
     this.trackElapsed = 0;
     this.applyTrack();
+    if (next === 'game' && this.songStarted) this.nextSong();
+    this.songOffset = 0;
+    if (next === 'game') this.songStarted = true;
+    this.syncSong();
     if (this.ctx) {
       this.nextNoteTime = this.ctx.currentTime + 0.05;
       this.filter.frequency.setTargetAtTime(
@@ -193,6 +282,7 @@ class Music {
   setMusicMuted(muted) {
     this.musicMuted = muted;
     this.applyGain(this.wasPaused);
+    this.syncSong();
   }
 
   toggleMusicMuted() {
@@ -214,6 +304,12 @@ class Music {
     if (paused !== this.wasPaused) {
       this.applyGain(paused);
       this.wasPaused = paused;
+      this.syncSong();
+    }
+
+    if (this.usingSong()) {
+      this.updateSongEnergy();
+      return;
     }
 
     if (paused || this.musicMuted) {
@@ -240,7 +336,25 @@ class Music {
     }
   }
 
+  updateSongEnergy() {
+    if (!this.songSource) {
+      this.songEnergy *= 0.85;
+      return;
+    }
+    this.analyser.getByteFrequencyData(this.freqData);
+    const binHz = this.ctx.sampleRate / this.analyser.fftSize;
+    const lo = Math.max(1, Math.floor(40 / binHz));
+    const hi = Math.ceil(160 / binHz);
+    let sum = 0;
+    for (let i = lo; i <= hi; i += 1) sum += this.freqData[i];
+    const bass = sum / ((hi - lo + 1) * 255);
+    this.bassAvg = this.bassAvg ? this.bassAvg * 0.95 + bass * 0.05 : bass;
+    const onset = Math.max(0, (bass - this.bassAvg * 1.05) * 6);
+    this.songEnergy = Math.max(this.songEnergy * 0.88, Math.min(1, onset));
+  }
+
   energy() {
+    if (this.usingSong()) return this.songEnergy || 0;
     if (!this.ctx || !this.beats) return 0;
     const now = this.ctx.currentTime;
     let last = 0;

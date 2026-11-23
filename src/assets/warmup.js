@@ -22,11 +22,6 @@ const WARM_ANIMS = [
   'sheepwolf-idle',
 ];
 
-/**
- * Dibuja todas las texturas/anims EN CÁMARA (bajo un cover)
- * para forzar decode + upload a GPU. Fuera de pantalla Phaser las cullea
- * y el primer uso en GameScene sigue pegando el hitch.
- */
 export function warmGameAssets(scene) {
   ensureSpriteAnims(scene);
 
@@ -87,7 +82,6 @@ export function warmGameAssets(scene) {
   }
   root.add(g);
 
-  // Cover opaco: el usuario solo ve LOADING, pero la GPU sí rasteriza debajo
   root.add(
     scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x050706, 1)
       .setDepth(60),

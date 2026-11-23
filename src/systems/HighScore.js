@@ -16,7 +16,6 @@ export function saveBestScore(score) {
   try {
     localStorage.setItem(SCORE_KEY, String(next));
   } catch {
-    /* ignore */
   }
   return next;
 }
@@ -30,7 +29,6 @@ export function submitScore(score) {
   return false;
 }
 
-/** Mejor tiempo = supervivencia más larga (segundos). */
 export function loadBestTime() {
   try {
     const raw = localStorage.getItem(TIME_KEY);
@@ -46,7 +44,6 @@ export function saveBestTime(seconds) {
   try {
     localStorage.setItem(TIME_KEY, String(next));
   } catch {
-    /* ignore */
   }
   return next;
 }

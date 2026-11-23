@@ -4,7 +4,7 @@ import { themeFromHue } from '../fx/color.js';
 
 const PATTERNS = ['square', 'triangle', 'hex', 'diamond'];
 const PATTERN_SECONDS = 18;
-const CROSSFADE = 0.18; // fracción del ciclo para solapar figuras
+const CROSSFADE = 0.18;
 
 export class PulseField {
   constructor(scene) {
@@ -51,7 +51,6 @@ export class PulseField {
 
     this.mesh = scene.add.graphics().setDepth(-13);
 
-    // Recorta malla/patrón al interior del mapa
     this.maskGfx = scene.make.graphics({ x: 0, y: 0, add: false });
     this.maskGfx.fillStyle(0xffffff, 1);
     this.maskGfx.fillRect(this.left, this.top, this.width, this.height);
@@ -72,7 +71,6 @@ export class PulseField {
     const next = (idx + 1) % PATTERNS.length;
     const frac = cycle - Math.floor(cycle);
 
-    // Crossfade: la figura actual se va y la siguiente entra encima
     let blendCurr = 1;
     let blendNext = 0;
     if (frac > 1 - CROSSFADE) {
@@ -114,7 +112,6 @@ export class PulseField {
     if (alpha < 0.02) return;
     g.lineStyle(1, color, alpha);
 
-    // Offset continuo con el periodo propio de cada figura (evita saltos al envolver)
     if (kind === 'square') this.drawSquares(g);
     else if (kind === 'triangle') this.drawTriangles(g);
     else if (kind === 'hex') this.drawHexes(g);
@@ -151,7 +148,6 @@ export class PulseField {
       const colMax = Math.ceil((this.right - ox - xShift) / cell) + 1;
       for (let col = colMin; col <= colMax; col += 1) {
         const x = col * cell + ox + xShift;
-        // Solo lados diagonales (sin base horizontal)
         if (odd) {
           const baseY = y + h * 0.15;
           const apexY = y + h * 0.85;
@@ -168,7 +164,6 @@ export class PulseField {
   }
 
   drawHexes(g) {
-    // Lattice absoluta: la paridad va con el índice de fila, no con el wrap del scroll
     const size = this.gap * 0.48;
     const w = size * Math.sqrt(3);
     const h = size * 1.5;
@@ -203,7 +198,6 @@ export class PulseField {
   }
 
   drawDiamonds(g) {
-    // Zigzags continuos por fila (nunca traza horizontales)
     const s = this.gap;
     const ox = this.scroll;
     const oy = this.scroll;
@@ -224,10 +218,8 @@ export class PulseField {
         const peakY = y - s * 0.5;
         const troughY = y + s * 0.5;
         const nextX = x + s;
-        // /\
         g.lineBetween(prevUpX, prevUpY, midX, peakY);
         g.lineBetween(midX, peakY, nextX, y);
-        // \/
         g.lineBetween(prevDnX, prevDnY, midX, troughY);
         g.lineBetween(midX, troughY, nextX, y);
         prevUpX = nextX;

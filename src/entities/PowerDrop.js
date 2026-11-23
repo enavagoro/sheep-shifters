@@ -16,7 +16,6 @@ export class PowerDrop {
     const info = POWER_INFO[kind] || POWER_INFO.blast;
     const color = info.color;
     this.ringR = 22;
-    // Hueso cabe dentro del círculo (con margen)
     this.boneScale = (this.ringR * 1.4) / SPRITES.bone.frameWidth;
 
     this.glow = scene.add.circle(x, y, this.ringR + 3, color, 0.28).setDepth(6);

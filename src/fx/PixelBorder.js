@@ -1,9 +1,3 @@
-/** Borde pixel: contorno negro fino + trazo verde interior (esquinas rectas). */
-
-/**
- * @param {Phaser.GameObjects.Graphics} g
- * @param {{left:number,top:number,right:number,bottom:number}} box
- */
 export function paintPixelFrame(g, box, opts = {}) {
   const outer = opts.dark ?? 0x050706;
   const inner = opts.light ?? 0x39ff6a;
