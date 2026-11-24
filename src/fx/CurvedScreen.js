@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 
-const CURVE = 0.0735;
+const SUBTLE = { curve: 0.0735, fit: 0.5, rounded: 0 };
+const ROUNDED = { curve: 0.24, fit: 0.25, rounded: 1 };
 const ROLL_DURATION = 3.2;
 const ROLL_GAP_MIN = 6;
 const ROLL_GAP_MAX = 12;
@@ -10,10 +11,15 @@ const fragShader = `
 precision mediump float;
 uniform sampler2D uMainSampler;
 uniform float uCurve;
+uniform float uFit;
+uniform float uRounded;
 uniform vec2 uResolution;
 uniform float uTime;
 uniform float uRoll;
 varying vec2 outTexCoord;
+
+// Same as the page background (#050706) so the curved edge blends into the letterbox.
+const vec3 BEZEL = vec3(5.0, 7.0, 6.0) / 255.0;
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
@@ -33,8 +39,18 @@ vec4 sampleSmooth(vec2 uv) {
 
 void main() {
   vec2 d = outTexCoord - 0.5;
-  float scale = (1.0 + uCurve * dot(d, d)) / (1.0 + uCurve * 0.5);
+  float scale = (1.0 + uCurve * dot(d, d)) / (1.0 + uCurve * uFit);
   vec2 uv = 0.5 + d * scale;
+
+  float mask = 1.0;
+  if (uRounded > 0.5) {
+    vec2 edge = min(uv, 1.0 - uv) * uResolution;
+    mask = smoothstep(0.0, 2.5, min(edge.x, edge.y));
+    if (mask <= 0.0) {
+      gl_FragColor = vec4(BEZEL, 1.0);
+      return;
+    }
+  }
 
   float band = 0.0;
   float line = floor(uv.y * uResolution.y / 2.0);
@@ -55,7 +71,7 @@ void main() {
     color.rgb = mix(color.rgb, color.gbr, band * 0.05);
   }
 
-  gl_FragColor = color;
+  gl_FragColor = vec4(mix(BEZEL, color.rgb, mask), 1.0);
 }
 `;
 
@@ -79,18 +95,27 @@ function rollPosition(now) {
 export class CurvedScreen extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
   constructor(game) {
     super({ game, name: 'CurvedScreen', fragShader });
+    this.look = SUBTLE;
   }
 
   onPreRender() {
     const now = performance.now() / 1000;
-    this.set1f('uCurve', CURVE);
+    this.set1f('uCurve', this.look.curve);
+    this.set1f('uFit', this.look.fit);
+    this.set1f('uRounded', this.look.rounded);
     this.set2f('uResolution', this.renderer.width, this.renderer.height);
     this.set1f('uTime', now);
     this.set1f('uRoll', rollPosition(now));
   }
 }
 
-export function applyCurvedScreen(scene) {
+export function applyCurvedScreen(scene, { rounded = false } = {}) {
   if (scene.renderer.type !== Phaser.WEBGL) return;
-  scene.cameras.main.setPostPipeline(CurvedScreen);
+  const camera = scene.cameras.main;
+  camera.setPostPipeline(CurvedScreen);
+  const pipeline = camera.getPostPipeline(CurvedScreen);
+  const instances = Array.isArray(pipeline) ? pipeline : [pipeline];
+  for (const instance of instances) {
+    if (instance) instance.look = rounded ? ROUNDED : SUBTLE;
+  }
 }

@@ -16,7 +16,7 @@ export class MenuScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor('#050706');
-    applyCurvedScreen(this);
+    applyCurvedScreen(this, { rounded: true });
     this.settings = loadSettings();
     this.applyAudioSettings();
 
@@ -35,6 +35,7 @@ export class MenuScene extends Phaser.Scene {
     this.logo.setScale(scale);
     this.menuTopY = GAME_HEIGHT / 2 + 28;
     this.logo.setPosition(GAME_WIDTH / 2, this.menuTopY - 52);
+    this.logoBacking = this.createLogoBacking(scale);
 
     this.cursorSheep = this.add.sprite(0, 0, 'sheep', 0)
       .setOrigin(0.5)
@@ -123,6 +124,59 @@ export class MenuScene extends Phaser.Scene {
     this.applyAudioSettings();
 
     this.rebuild();
+  }
+
+  // Solid silhouette behind the logo so the herd passes behind it instead of
+  // showing through the transparent gaps (between the ears, inside the frame).
+  createLogoBacking(scale) {
+    const key = 'logo-backing';
+    const pad = 12;
+    const src = this.textures.get('logo').getSourceImage();
+    const w = src.width;
+    const h = src.height;
+
+    if (!this.textures.exists(key)) {
+      const read = document.createElement('canvas');
+      read.width = w;
+      read.height = h;
+      const rctx = read.getContext('2d', { willReadFrequently: true });
+      rctx.drawImage(src, 0, 0);
+      const alpha = rctx.getImageData(0, 0, w, h).data;
+
+      // Fill each row between its leftmost and rightmost opaque pixel.
+      const fill = document.createElement('canvas');
+      fill.width = w;
+      fill.height = h;
+      const fctx = fill.getContext('2d');
+      fctx.fillStyle = '#050706';
+      for (let y = 0; y < h; y += 1) {
+        let left = -1;
+        let right = -1;
+        for (let x = 0; x < w; x += 1) {
+          if (alpha[(y * w + x) * 4 + 3] > 24) {
+            if (left < 0) left = x;
+            right = x;
+          }
+        }
+        if (left >= 0) fctx.fillRect(left, y, right - left + 1, 1);
+      }
+
+      // Grow it a little so the edge sits just outside the artwork.
+      const out = this.textures.createCanvas(key, w + pad * 2, h + pad * 2);
+      const octx = out.getContext();
+      const steps = 16;
+      for (let i = 0; i < steps; i += 1) {
+        const a = (i / steps) * Math.PI * 2;
+        octx.drawImage(fill, pad + Math.cos(a) * pad, pad + Math.sin(a) * pad);
+      }
+      octx.drawImage(fill, pad, pad);
+      out.refresh();
+    }
+
+    return this.add.image(this.logo.x, this.logo.y, key)
+      .setOrigin(0.5, (h + pad) / (h + pad * 2))
+      .setScale(scale)
+      .setDepth(4);
   }
 
   applyAudioSettings() {
@@ -364,7 +418,9 @@ export class MenuScene extends Phaser.Scene {
     const lang = this.lang();
     const items = this.itemsForScreen();
     this.index = Phaser.Math.Clamp(this.index, 0, Math.max(0, items.length - 1));
-    this.logo?.setVisible(this.screen === 'main' || this.screen === 'options');
+    const showLogo = this.screen === 'main' || this.screen === 'options';
+    this.logo?.setVisible(showLogo);
+    this.logoBacking?.setVisible(showLogo);
 
     for (let i = 0; i < this.lines.length; i += 1) {
       const item = items[i];
